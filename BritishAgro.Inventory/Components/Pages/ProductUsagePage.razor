@@ -123,13 +123,11 @@
     OnSubmit="SaveAsync">
     <div class="mb-3">
         <label class="form-label">Product</label>
-        <InputSelect class="form-select" @bind-Value="model.ProductId">
-            <option value="0">Select product</option>
-            @foreach (var product in products)
-            {
-                <option value="@product.ItemId">@product.Name</option>
-            }
-        </InputSelect>
+        <SearchableSelect TItem="BritishAgro.Inventory.Data.Product"
+            Items="products"
+            SelectedItem="selectedProduct"
+            SelectedItemChanged="OnProductSelected"
+            ItemLabel="@(p => p.Name)" />
         <ValidationMessage For="() => model.ProductId" class="text-danger" />
     </div>
     <div class="mb-3">
@@ -162,6 +160,7 @@
     private IReadOnlyList<BritishAgro.Inventory.Data.ProductReturn> returns = [];
     private UsageInput model = new();
     private BritishAgro.Inventory.Data.ProductUsage? selectedUsage;
+    private BritishAgro.Inventory.Data.Product? selectedProduct;
     private bool isLoading = true;
     private bool isReturnModalOpen;
     private bool isUsageModalOpen;
@@ -241,6 +240,7 @@
     private void OpenCreateModal()
     {
         model = new() { Date = DateTime.Now };
+        selectedProduct = null;
         isUsageModalOpen = true;
     }
 
@@ -248,6 +248,13 @@
     {
         isUsageModalOpen = false;
         model = new();
+        selectedProduct = null;
+    }
+
+    private void OnProductSelected(BritishAgro.Inventory.Data.Product product)
+    {
+        selectedProduct = product;
+        model.ProductId = product.ItemId;
     }
 
     private async Task SaveAsync()

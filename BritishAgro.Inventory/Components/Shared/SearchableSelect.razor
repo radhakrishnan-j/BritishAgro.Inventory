@@ -1,0 +1,114 @@
+@typeparam TItem
+@implements IAsyncDisposable
+
+<div class="searchable-select">
+    <div class="input-group">
+        <span class="input-group-text bg-light border-end-0">
+            <i class="bi bi-search"></i>
+        </span>
+        <input type="text" 
+               class="form-control border-start-0" 
+               placeholder="Search..."
+               @bind="searchText" 
+               @bind:event="oninput" 
+               @onfocus="OnFocus"
+               @onblur="OnBlur"
+               autocomplete="off" />
+    </div>
+
+    @if (isOpen && (filteredItems.Count > 0 || !string.IsNullOrWhiteSpace(searchText)))
+    {
+        <div class="list-group searchable-select-dropdown">
+            @if (filteredItems.Count > 0)
+            {
+                @foreach (var item in filteredItems)
+                {
+                    <button type="button" 
+                            class="list-group-item list-group-item-action" 
+                            @onclick="() => SelectItem(item)"
+                            @onclick:preventDefault="true">
+                        @GetItemLabel(item)
+                    </button>
+                }
+            }
+            else
+            {
+                <div class="list-group-item text-secondary text-center py-2">
+                    No items found
+                </div>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    private bool isOpen;
+    private string searchText = string.Empty;
+    private List<TItem> filteredItems = [];
+
+    [Parameter, EditorRequired]
+    public IReadOnlyList<TItem> Items { get; set; } = [];
+
+    [Parameter, EditorRequired]
+    public TItem? SelectedItem { get; set; }
+
+    [Parameter, EditorRequired]
+    public EventCallback<TItem> SelectedItemChanged { get; set; }
+
+    [Parameter, EditorRequired]
+    public Func<TItem, string> ItemLabel { get; set; } = item => item?.ToString() ?? string.Empty;
+
+    protected override void OnParametersSet()
+    {
+        UpdateFilteredItems();
+    }
+
+    private void UpdateFilteredItems()
+    {
+        if (string.IsNullOrWhiteSpace(searchText))
+        {
+            filteredItems = Items.ToList();
+        }
+        else
+        {
+            var query = searchText.ToLower();
+            filteredItems = Items
+                .Where(item => ItemLabel(item).ToLower().Contains(query))
+                .ToList();
+        }
+    }
+
+    private void OnFocus()
+    {
+        isOpen = true;
+        UpdateFilteredItems();
+    }
+
+    private void OnBlur()
+    {
+        Task.Delay(200).ContinueWith(_ =>
+        {
+            isOpen = false;
+            InvokeAsync(StateHasChanged);
+        });
+    }
+
+    private async Task SelectItem(TItem item)
+    {
+        SelectedItem = item;
+        searchText = GetItemLabel(item);
+        isOpen = false;
+        await SelectedItemChanged.InvokeAsync(item);
+    }
+
+    private string GetItemLabel(TItem item)
+    {
+        return ItemLabel(item);
+    }
+
+    async ValueTask IAsyncDisposable.DisposeAsync()
+    {
+        // Cleanup if needed
+        await ValueTask.CompletedTask;
+    }
+}

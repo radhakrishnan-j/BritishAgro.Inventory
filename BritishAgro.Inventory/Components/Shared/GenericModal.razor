@@ -1,29 +1,29 @@
 @typeparam TModel
 
-<div @onclick="OnBackdropClick" @onclick:stopPropagation="false" style="@(IsOpen ? "display: block; background-color: #00000080;" : "display: none;")" class="modal fade @(IsOpen ? "show d-block" : "")">
-    @if (IsOpen)
-    {
-        <div class="modal-dialog modal-dialog-centered" @onclick:stopPropagation="true">
-            <div class="modal-content">
-                <div class="modal-header border-bottom">
+@if (IsOpen)
+{
+    <div @onclick="OnBackdropClick" @onclick:stopPropagation="false" style="display: flex; background-color: #00000080; position: fixed; top: 0; left: 0; right: 0; bottom: 0; z-index: 99999; align-items: center; justify-content: center; padding: 1rem; padding-top: 6.5rem; overflow: hidden;" class="modal fade show d-block">
+        <div class="modal-dialog modal-dialog-centered" @onclick:stopPropagation="true" style="position: relative; z-index: 100000; width: auto; max-width: 500px; min-width: 300px; margin: auto; height: fit-content; max-height: calc(100vh - 9rem); display: flex; flex-direction: column;">
+            <div class="modal-content" style="display: flex; flex-direction: column; height: 100%; overflow: hidden;">
+                <div class="modal-header border-bottom" style="flex-shrink: 0;">
                     <h5 class="modal-title">@Title</h5>
                     <button type="button" class="btn-close" aria-label="Close" @onclick="CloseAsync"></button>
                 </div>
-                <EditForm Model="Model" OnValidSubmit="OnSubmit" FormName="@FormName">
+                <EditForm Model="Model" OnValidSubmit="OnSubmit" FormName="@FormName" style="display: flex; flex-direction: column; height: 100%; overflow: hidden;">
                     <DataAnnotationsValidator />
-                    <div class="modal-body">
+                    <div class="modal-body" style="overflow-y: auto; flex: 1; min-height: 0;">
                         <ValidationSummary class="alert alert-danger mb-0" />
                         @ChildContent
                     </div>
-                    <div class="modal-footer border-top">
+                    <div class="modal-footer border-top" style="flex-shrink: 0;">
                         <button type="button" class="btn btn-outline-secondary" @onclick="CloseAsync">Cancel</button>
                         <button type="submit" class="btn btn-primary">@SubmitButtonText</button>
                     </div>
                 </EditForm>
             </div>
         </div>
-    }
-</div>
+    </div>
+}
 
 @code {
     [Parameter, EditorRequired]
