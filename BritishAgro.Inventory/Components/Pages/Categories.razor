@@ -1,0 +1,272 @@
+@page "/categories"
+@rendermode InteractiveServer
+@attribute [Authorize]
+
+@using System.ComponentModel.DataAnnotations
+@inject BritishAgro.Inventory.Services.Inventory.ICategoryService CategoryService
+@inject BritishAgro.Inventory.Services.Notifications.NotificationService NotificationService
+
+<PageTitle>Categories</PageTitle>
+
+<SectionHeader Title="Categories" Subtitle="Create and maintain inventory categories.">
+    <Actions>
+        <button type="button" class="btn btn-primary" @onclick="OpenCreateModal">
+            <i class="bi bi-plus-circle me-2"></i>New category
+        </button>
+    </Actions>
+</SectionHeader>
+
+<div class="content-card">
+    <div class="row mb-4 align-items-center">
+        <div class="col-md-6">
+            <div class="input-group">
+                <span class="input-group-text bg-light border-end-0">
+                    <i class="bi bi-search"></i>
+                </span>
+                <input type="text" class="form-control border-start-0" placeholder="Search by category name..." 
+                       @bind="searchQuery" @bind:event="oninput" @onkeyup="OnSearchChanged" />
+            </div>
+        </div>
+        <div class="col-md-6 text-end">
+            <small class="text-secondary">Total: @allCategories.Count categories</small>
+        </div>
+    </div>
+
+    @if (isLoading)
+    {
+        <div class="text-center py-5">
+            <div class="spinner-border spinner-border-sm text-primary" role="status">
+                <span class="visually-hidden">Loading...</span>
+            </div>
+            <p class="text-secondary mt-2">Loading categories...</p>
+        </div>
+    }
+    else if (paginatedCategories.Count == 0)
+    {
+        <EmptyState Title="No categories found" Message="@(string.IsNullOrEmpty(searchQuery) ? "Create your first category to organize products." : "No categories match your search criteria.")" />
+    }
+    else
+    {
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-4">
+                <thead class="table-light">
+                    <tr>
+                        <th>Name</th>
+                        <th>Description</th>
+                        <th>Status</th>
+                        <th class="text-end">Products</th>
+                        <th class="text-end">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var category in paginatedCategories)
+                    {
+                        <tr>
+                            <td>
+                                <strong>@category.Name</strong>
+                            </td>
+                            <td>
+                                <span class="text-secondary">@(string.IsNullOrEmpty(category.Description) ? "-" : category.Description)</span>
+                            </td>
+                            <td>
+                                <span class="badge @(category.IsActive ? "text-bg-success" : "text-bg-secondary")">
+                                    @(category.IsActive ? "Active" : "Inactive")
+                                </span>
+                            </td>
+                            <td class="text-end">@category.Products.Count</td>
+                            <td class="text-end">
+                                <button type="button" class="btn btn-sm btn-outline-primary me-2" @onclick="() => OpenEditModal(category)" title="Edit">
+                                    <i class="bi bi-pencil"></i>
+                                </button>
+                                <button type="button" class="btn btn-sm btn-outline-danger" @onclick="() => DeleteAsync(category.CategoryId)" title="Delete">
+                                    <i class="bi bi-trash"></i>
+                                </button>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+
+        <PaginationControls 
+            Items="paginatedCategories" 
+            CurrentPage="currentPage" 
+            PageSize="pageSize" 
+            TotalItems="filteredCategories.Count" 
+            OnPageChanged="OnPageChanged" />
+    }
+</div>
+
+<GenericModal TModel="CategoryInput" 
+    IsOpen="isModalOpen" 
+    Title="@(model.CategoryId == 0 ? "Create Category" : "Edit Category")" 
+    Model="model" 
+    SubmitButtonText="@(model.CategoryId == 0 ? "Create" : "Update")"
+    FormName="category-form" 
+    OnClose="CloseModal" 
+    OnSubmit="SaveAsync">
+    <div class="mb-3">
+        <label class="form-label">Name</label>
+        <InputText class="form-control" @bind-Value="model.Name" placeholder="Enter category name" />
+        <ValidationMessage For="() => model.Name" class="text-danger" />
+    </div>
+    <div class="mb-3">
+        <label class="form-label">Description</label>
+        <InputTextArea class="form-control" rows="4" @bind-Value="model.Description" placeholder="Enter category description (optional)" />
+        <ValidationMessage For="() => model.Description" class="text-danger" />
+    </div>
+    <div class="form-check form-switch">
+        <InputCheckbox class="form-check-input" @bind-Value="model.IsActive" />
+        <label class="form-check-label">Active</label>
+    </div>
+</GenericModal>
+
+@code {
+    private IReadOnlyList<BritishAgro.Inventory.Data.Category> allCategories = [];
+    private IReadOnlyList<BritishAgro.Inventory.Data.Category> filteredCategories = [];
+    private IReadOnlyList<BritishAgro.Inventory.Data.Category> paginatedCategories = [];
+    private CategoryInput model = new();
+    private bool isLoading = true;
+    private bool isModalOpen;
+    private int currentPage = 1;
+    private int pageSize = 10;
+    private string searchQuery = string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        try
+        {
+            isLoading = true;
+            allCategories = await CategoryService.GetAllAsync();
+            filteredCategories = allCategories;
+            UpdatePaginatedCategories();
+        }
+        catch (Exception exception)
+        {
+            NotificationService.Error(exception.Message);
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private void OnSearchChanged()
+    {
+        currentPage = 1;
+        ApplySearch();
+    }
+
+    private void ApplySearch()
+    {
+        if (string.IsNullOrWhiteSpace(searchQuery))
+        {
+            filteredCategories = allCategories;
+        }
+        else
+        {
+            var query = searchQuery.ToLower();
+            filteredCategories = allCategories
+                .Where(c => c.Name.ToLower().Contains(query) || 
+                           (c.Description ?? string.Empty).ToLower().Contains(query))
+                .ToList();
+        }
+        UpdatePaginatedCategories();
+    }
+
+    private void UpdatePaginatedCategories()
+    {
+        var startIndex = (currentPage - 1) * pageSize;
+        paginatedCategories = filteredCategories.Skip(startIndex).Take(pageSize).ToList();
+    }
+
+    private async Task OnPageChanged(int page)
+    {
+        currentPage = page;
+        UpdatePaginatedCategories();
+    }
+
+    private void OpenCreateModal()
+    {
+        model = new();
+        isModalOpen = true;
+    }
+
+    private void OpenEditModal(BritishAgro.Inventory.Data.Category category)
+    {
+        model = new CategoryInput
+        {
+            CategoryId = category.CategoryId,
+            Name = category.Name,
+            Description = category.Description,
+            IsActive = category.IsActive
+        };
+        isModalOpen = true;
+    }
+
+    private void CloseModal()
+    {
+        isModalOpen = false;
+        model = new();
+    }
+
+    private async Task SaveAsync()
+    {
+        try
+        {
+            await CategoryService.SaveAsync(new BritishAgro.Inventory.Data.Category
+            {
+                CategoryId = model.CategoryId,
+                Name = model.Name,
+                Description = model.Description,
+                IsActive = model.IsActive
+            });
+
+            NotificationService.Success(model.CategoryId == 0 ? "Category created successfully." : "Category updated successfully.");
+            CloseModal();
+            await LoadAsync();
+        }
+        catch (Exception exception)
+        {
+            NotificationService.Error(exception.Message);
+        }
+    }
+
+    private async Task DeleteAsync(int categoryId)
+    {
+        try
+        {
+            await CategoryService.DeleteAsync(categoryId);
+            NotificationService.Success("Category deleted successfully.");
+            if (model.CategoryId == categoryId)
+            {
+                CloseModal();
+            }
+            await LoadAsync();
+        }
+        catch (Exception exception)
+        {
+            NotificationService.Error(exception.Message);
+        }
+    }
+
+    private sealed class CategoryInput
+    {
+        public int CategoryId { get; set; }
+
+        [Required]
+        [StringLength(100)]
+        public string Name { get; set; } = string.Empty;
+
+        [StringLength(500)]
+        public string? Description { get; set; }
+
+        public bool IsActive { get; set; } = true;
+    }
+}
+

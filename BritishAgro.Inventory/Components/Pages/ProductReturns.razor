@@ -1,0 +1,205 @@
+@page "/returns"
+@rendermode InteractiveServer
+@attribute [Authorize]
+
+@using System.ComponentModel.DataAnnotations
+@inject BritishAgro.Inventory.Services.Inventory.IInventoryTransactionService InventoryTransactionService
+@inject BritishAgro.Inventory.Services.Inventory.IProductService ProductService
+@inject BritishAgro.Inventory.Services.Time.BrowserTimeService BrowserTimeService
+@inject BritishAgro.Inventory.Services.Notifications.NotificationService NotificationService
+
+<PageTitle>Product Return</PageTitle>
+
+<SectionHeader Title="Product return" Subtitle="View all returned items." />
+
+<div class="content-card">
+    <div class="mb-4">
+        <div class="row g-3">
+            <div class="col-md-6">
+                <label class="form-label">Search by Product</label>
+                <input type="text" class="form-control" placeholder="Filter by product name..." @bind="productNameFilter" @bind:event="oninput" @onkeyup="OnFilterChanged" />
+            </div>
+            <div class="col-md-6">
+                <label class="form-label">Filter by Date</label>
+                <input type="date" class="form-control" @onchange="OnDateFilterChanged" />
+            </div>
+        </div>
+    </div>
+
+    @if (isLoading)
+    {
+        <p>Loading return history...</p>
+    }
+    else if (filteredHistory.Count == 0)
+    {
+        <EmptyState Title="No return history found" Message="Returned stock entries will appear here." />
+    }
+    else
+    {
+        <div class="table-responsive">
+            <table class="table table-modern align-middle mb-0">
+                <thead>
+                    <tr>
+                        <th>Product</th>
+                        <th>Date</th>
+                        <th class="text-end">Returned Qty</th>
+                        <th>Returned by</th>
+                        <th>Received By</th>
+                        <th class="text-end">Qty Issued</th>
+                        <th>Remarks</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var productReturn in GetPaginatedData())
+                    {
+                        var usage = usageMap.ContainsKey(productReturn.UsageId ?? 0) ? usageMap[productReturn.UsageId ?? 0] : null;
+                        <tr>
+                            <td>@productReturn.Product.Name</td>
+                            <td>@BrowserTimeService.Format(productReturn.Date)</td>
+                            <td class="text-end">@productReturn.QuantityReturned.ToString("0.##")</td>
+                            <td>@productReturn.ReturnedBy</td>
+                            <td>@(usage?.ReceivedBy ?? "-")</td>
+                            <td class="text-end">@(usage != null ? usage.Issued?.ToString("0.##") ?? "-" : "-")</td>
+                            <td>@productReturn.Remarks</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+
+        @if (TotalPages > 1)
+        {
+            <nav aria-label="Page navigation" class="mt-4">
+                <ul class="pagination justify-content-center">
+                    <li class="page-item @(CurrentPage == 1 ? "disabled" : "")">
+                        <button class="page-link" @onclick="() => GoToPage(1)" disabled="@(CurrentPage == 1)">First</button>
+                    </li>
+                    <li class="page-item @(CurrentPage == 1 ? "disabled" : "")">
+                        <button class="page-link" @onclick="() => GoToPage(CurrentPage - 1)" disabled="@(CurrentPage == 1)">Previous</button>
+                    </li>
+
+                    @for (int i = Math.Max(1, CurrentPage - 2); i <= Math.Min(TotalPages, CurrentPage + 2); i++)
+                    {
+                        int pageNum = i;
+                        <li class="page-item @(CurrentPage == pageNum ? "active" : "")">
+                            <button class="page-link" @onclick="() => GoToPage(pageNum)">@pageNum</button>
+                        </li>
+                    }
+
+                    <li class="page-item @(CurrentPage == TotalPages ? "disabled" : "")">
+                        <button class="page-link" @onclick="() => GoToPage(CurrentPage + 1)" disabled="@(CurrentPage == TotalPages)">Next</button>
+                    </li>
+                    <li class="page-item @(CurrentPage == TotalPages ? "disabled" : "")">
+                        <button class="page-link" @onclick="() => GoToPage(TotalPages)" disabled="@(CurrentPage == TotalPages)">Last</button>
+                    </li>
+                </ul>
+            </nav>
+            <div class="text-center mt-2 text-muted">
+                <small>Page @CurrentPage of @TotalPages (Total: @filteredHistory.Count records)</small>
+            </div>
+        }
+    }
+</div>
+
+@code {
+    private IReadOnlyList<BritishAgro.Inventory.Data.ProductReturn> history = [];
+    private List<BritishAgro.Inventory.Data.ProductReturn> filteredHistory = [];
+    private Dictionary<int, BritishAgro.Inventory.Data.ProductUsage> usageMap = [];
+    private bool isLoading = true;
+    private int CurrentPage = 1;
+    private const int PageSize = 10;
+
+    private string productNameFilter = string.Empty;
+    private DateTime? dateFilter = null;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAsync();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await BrowserTimeService.EnsureInitializedAsync();
+        }
+    }
+
+    private async Task LoadAsync()
+    {
+        try
+        {
+            isLoading = true;
+            history = await InventoryTransactionService.GetReturnHistoryAsync();
+
+            // Build a map of usage information
+            usageMap.Clear();
+            foreach (var item in history)
+            {
+                if (item.UsageId.HasValue && !usageMap.ContainsKey(item.UsageId.Value))
+                {
+                    var usages = await InventoryTransactionService.GetUsagesForProductAsync(item.ProductId);
+                    var usage = usages.FirstOrDefault(u => u.UsageId == item.UsageId.Value);
+                    if (usage != null)
+                    {
+                        usageMap[item.UsageId.Value] = usage;
+                    }
+                }
+            }
+
+            ApplyFilters();
+        }
+        catch (Exception exception)
+        {
+            NotificationService.Error(exception.Message);
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private void ApplyFilters()
+    {
+        filteredHistory = history
+            .Where(x => string.IsNullOrEmpty(productNameFilter) || x.Product.Name.Contains(productNameFilter, StringComparison.OrdinalIgnoreCase))
+            .Where(x => !dateFilter.HasValue || BrowserTimeService.ToBrowserLocalDateTime(x.Date).Date == dateFilter.Value.Date)
+            .ToList();
+
+        CurrentPage = 1;
+    }
+
+    private void OnFilterChanged()
+    {
+        ApplyFilters();
+    }
+
+    private void OnDateFilterChanged(ChangeEventArgs args)
+    {
+        if (args.Value is string dateStr && DateTime.TryParse(dateStr, out var selectedDate))
+        {
+            dateFilter = selectedDate;
+        }
+        else
+        {
+            dateFilter = null;
+        }
+        ApplyFilters();
+    }
+
+    private List<BritishAgro.Inventory.Data.ProductReturn> GetPaginatedData()
+    {
+        int skip = (CurrentPage - 1) * PageSize;
+        return filteredHistory.Skip(skip).Take(PageSize).ToList();
+    }
+
+    private int TotalPages => (filteredHistory.Count + PageSize - 1) / PageSize;
+
+    private void GoToPage(int page)
+    {
+        if (page >= 1 && page <= TotalPages)
+        {
+            CurrentPage = page;
+        }
+    }
+}

@@ -1,0 +1,347 @@
+@page "/usage"
+@rendermode InteractiveServer
+@attribute [Authorize]
+
+@using System.ComponentModel.DataAnnotations
+@inject BritishAgro.Inventory.Services.Inventory.IInventoryTransactionService InventoryTransactionService
+@inject BritishAgro.Inventory.Services.Inventory.IProductService ProductService
+@inject BritishAgro.Inventory.Services.Time.BrowserTimeService BrowserTimeService
+@inject BritishAgro.Inventory.Services.Notifications.NotificationService NotificationService
+
+<PageTitle>Product Usage</PageTitle>
+
+<SectionHeader Title="Product Usage" Subtitle="Issue products using FIFO stock deduction and keep recipient history.">
+    <Actions>
+        <button type="button" class="btn btn-primary" @onclick="OpenCreateModal">
+            <i class="bi bi-plus-circle me-2"></i>Record usage
+        </button>
+    </Actions>
+</SectionHeader>
+
+<div class="content-card">
+    <div class="row mb-4 align-items-center">
+        <div class="col-md-6">
+            <div class="input-group">
+                <span class="input-group-text bg-light border-end-0">
+                    <i class="bi bi-search"></i>
+                </span>
+                <input type="text" class="form-control border-start-0" placeholder="Search by product name..." 
+                       @bind="searchQuery" @bind:event="oninput" @onkeyup="OnSearchChanged" />
+            </div>
+        </div>
+        <div class="col-md-6 text-end">
+            <small class="text-secondary">Total: @allHistory.Count usage records</small>
+        </div>
+    </div>
+
+    @if (isLoading)
+    {
+        <div class="text-center py-5">
+            <div class="spinner-border spinner-border-sm text-primary" role="status">
+                <span class="visually-hidden">Loading...</span>
+            </div>
+            <p class="text-secondary mt-2">Loading usage history...</p>
+        </div>
+    }
+    else if (paginatedHistory.Count == 0)
+    {
+        <EmptyState Title="No usage history found" Message="@(string.IsNullOrEmpty(searchQuery) ? "Issue stock to see usage history." : "No usage records match your search criteria.")" />
+    }
+    else
+    {
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-4">
+                <thead class="table-light">
+                    <tr>
+                        <th>Product</th>
+                        <th>Date</th>
+                        <th class="text-end">Issued</th>
+                        <th>Received by</th>
+                        <th>Remarks</th>
+                        <th class="text-end">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var usage in paginatedHistory)
+                    {
+                        <tr>
+                            <td>
+                                <strong>@usage.Product.Name</strong>
+                            </td>
+                            <td>
+                                <small class="text-secondary">@BrowserTimeService.Format(usage.Date)</small>
+                            </td>
+                            <td class="text-end">
+                                <strong>@usage.Issued?.ToString("0.##")</strong>
+                            </td>
+                            <td>@usage.ReceivedBy</td>
+                            <td>
+                                <small class="text-secondary">@usage.Remarks</small>
+                            </td>
+                            <td class="text-end">
+                                @if (CanCreateReturn(usage))
+                                {
+                                    <button type="button" class="btn btn-sm btn-outline-primary" @onclick="() => OpenReturnModal(usage)" title="Create return">
+                                        <i class="bi bi-arrow-return-left"></i>
+                                    </button>
+                                }
+                                else
+                                {
+                                    <button type="button" class="btn btn-sm btn-outline-secondary" disabled title="Fully returned">
+                                        <i class="bi bi-check-circle"></i>
+                                    </button>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+
+        <PaginationControls 
+            Items="paginatedHistory" 
+            CurrentPage="currentPage" 
+            PageSize="pageSize" 
+            TotalItems="filteredHistory.Count" 
+            OnPageChanged="OnPageChanged" />
+    }
+</div>
+
+<ProductReturnModal IsOpen="isReturnModalOpen"
+                    Usage="selectedUsage"
+                    MaxQuantityReturned="remainingReturnQuantity"
+                    OnClose="CloseReturnModal"
+                    OnSave="SaveReturnAsync" />
+
+<GenericModal TModel="UsageInput" 
+    IsOpen="isUsageModalOpen" 
+    Title="Record Product Usage" 
+    Model="model" 
+    SubmitButtonText="Record usage"
+    FormName="product-usage-form" 
+    OnClose="CloseCreateModal" 
+    OnSubmit="SaveAsync">
+    <div class="mb-3">
+        <label class="form-label">Product</label>
+        <InputSelect class="form-select" @bind-Value="model.ProductId">
+            <option value="0">Select product</option>
+            @foreach (var product in products)
+            {
+                <option value="@product.ItemId">@product.Name</option>
+            }
+        </InputSelect>
+        <ValidationMessage For="() => model.ProductId" class="text-danger" />
+    </div>
+    <div class="mb-3">
+        <label class="form-label">Date and time</label>
+        <InputDate class="form-control" @bind-Value="model.Date" Type="InputDateType.DateTimeLocal" />
+        <ValidationMessage For="() => model.Date" class="text-danger" />
+    </div>
+    <div class="mb-3">
+        <label class="form-label">Issued quantity</label>
+        <InputNumber class="form-control" @bind-Value="model.Issued" />
+        <ValidationMessage For="() => model.Issued" class="text-danger" />
+    </div>
+    <div class="mb-3">
+        <label class="form-label">Received by</label>
+        <InputText class="form-control" @bind-Value="model.ReceivedBy" placeholder="Enter recipient name" />
+        <ValidationMessage For="() => model.ReceivedBy" class="text-danger" />
+    </div>
+    <div class="mb-3">
+        <label class="form-label">Remarks</label>
+        <InputTextArea class="form-control" rows="3" @bind-Value="model.Remarks" placeholder="Add any additional notes..." />
+        <ValidationMessage For="() => model.Remarks" class="text-danger" />
+    </div>
+</GenericModal>
+
+@code {
+    private IReadOnlyList<BritishAgro.Inventory.Data.Product> products = [];
+    private IReadOnlyList<BritishAgro.Inventory.Data.ProductUsage> allHistory = [];
+    private IReadOnlyList<BritishAgro.Inventory.Data.ProductUsage> filteredHistory = [];
+    private IReadOnlyList<BritishAgro.Inventory.Data.ProductUsage> paginatedHistory = [];
+    private IReadOnlyList<BritishAgro.Inventory.Data.ProductReturn> returns = [];
+    private UsageInput model = new();
+    private BritishAgro.Inventory.Data.ProductUsage? selectedUsage;
+    private bool isLoading = true;
+    private bool isReturnModalOpen;
+    private bool isUsageModalOpen;
+    private decimal remainingReturnQuantity;
+    private int currentPage = 1;
+    private int pageSize = 10;
+    private string searchQuery = string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAsync();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await BrowserTimeService.EnsureInitializedAsync();
+        }
+    }
+
+    private async Task LoadAsync()
+    {
+        try
+        {
+            isLoading = true;
+            products = (await ProductService.GetAllAsync()).Where(x => x.IsActive).ToList();
+            allHistory = await InventoryTransactionService.GetUsageHistoryAsync();
+            filteredHistory = allHistory;
+            returns = await InventoryTransactionService.GetReturnHistoryAsync();
+            UpdatePaginatedHistory();
+        }
+        catch (Exception exception)
+        {
+            NotificationService.Error(exception.Message);
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private void OnSearchChanged()
+    {
+        currentPage = 1;
+        ApplySearch();
+    }
+
+    private void ApplySearch()
+    {
+        if (string.IsNullOrWhiteSpace(searchQuery))
+        {
+            filteredHistory = allHistory;
+        }
+        else
+        {
+            var query = searchQuery.ToLower();
+            filteredHistory = allHistory
+                .Where(u => u.Product.Name.ToLower().Contains(query))
+                .ToList();
+        }
+        UpdatePaginatedHistory();
+    }
+
+    private void UpdatePaginatedHistory()
+    {
+        var startIndex = (currentPage - 1) * pageSize;
+        paginatedHistory = filteredHistory.Skip(startIndex).Take(pageSize).ToList();
+    }
+
+    private async Task OnPageChanged(int page)
+    {
+        currentPage = page;
+        UpdatePaginatedHistory();
+    }
+
+    private void OpenCreateModal()
+    {
+        model = new() { Date = DateTime.Now };
+        isUsageModalOpen = true;
+    }
+
+    private void CloseCreateModal()
+    {
+        isUsageModalOpen = false;
+        model = new();
+    }
+
+    private async Task SaveAsync()
+    {
+        try
+        {
+            await BrowserTimeService.EnsureInitializedAsync();
+            await InventoryTransactionService.RecordUsageAsync(new BritishAgro.Inventory.Data.ProductUsage
+            {
+                ProductId = model.ProductId,
+                Date = BrowserTimeService.ToUtcUnixMilliseconds(model.Date),
+                Issued = model.Issued,
+                ReceivedBy = model.ReceivedBy,
+                Remarks = model.Remarks
+            });
+
+            NotificationService.Success("Product usage recorded successfully.");
+            CloseCreateModal();
+            await LoadAsync();
+        }
+        catch (Exception exception)
+        {
+            NotificationService.Error(exception.Message);
+        }
+    }
+
+    private void OpenReturnModal(BritishAgro.Inventory.Data.ProductUsage usage)
+    {
+        var remainingQuantity = GetRemainingReturnQuantity(usage);
+        if (remainingQuantity <= 0)
+        {
+            NotificationService.Error("This usage has already been fully returned.");
+            return;
+        }
+
+        selectedUsage = usage;
+        remainingReturnQuantity = remainingQuantity;
+        isReturnModalOpen = true;
+    }
+
+    private void CloseReturnModal()
+    {
+        isReturnModalOpen = false;
+        selectedUsage = null;
+        remainingReturnQuantity = 0;
+    }
+
+    private decimal GetRemainingReturnQuantity(BritishAgro.Inventory.Data.ProductUsage usage)
+    {
+        var issuedQuantity = usage.Issued ?? 0;
+        var returnedQuantity = returns.Where(productReturn => productReturn.UsageId == usage.UsageId).Sum(productReturn => productReturn.QuantityReturned);
+        return Math.Max(issuedQuantity - returnedQuantity, 0);
+    }
+
+    private bool CanCreateReturn(BritishAgro.Inventory.Data.ProductUsage usage)
+    {
+        return GetRemainingReturnQuantity(usage) > 0;
+    }
+
+    private async Task SaveReturnAsync(BritishAgro.Inventory.Data.ProductReturn productReturn)
+    {
+        try
+        {
+            await BrowserTimeService.EnsureInitializedAsync();
+            productReturn.Date = BrowserTimeService.ToUtcUnixMilliseconds(DateTimeOffset.FromUnixTimeMilliseconds(productReturn.Date).LocalDateTime);
+            await InventoryTransactionService.RecordReturnAsync(productReturn);
+
+            NotificationService.Success("Product return recorded successfully.");
+            CloseReturnModal();
+            await LoadAsync();
+        }
+        catch (Exception exception)
+        {
+            NotificationService.Error(exception.Message);
+        }
+    }
+
+    private sealed class UsageInput
+    {
+        [Range(1, int.MaxValue)]
+        public int ProductId { get; set; }
+
+        public DateTime Date { get; set; } = DateTime.Now;
+
+        [Range(typeof(decimal), "0.01", "999999999")]
+        public decimal Issued { get; set; }
+
+        [Required]
+        [StringLength(255)]
+        public string ReceivedBy { get; set; } = string.Empty;
+
+        [Required]
+        [StringLength(255)]
+        public string Remarks { get; set; } = string.Empty;
+    }
+}
+

@@ -1,0 +1,45 @@
+﻿@inherits LayoutComponentBase
+
+<div class="page app-shell">
+    <div class="app-background-orb app-background-orb-primary"></div>
+    <div class="app-background-orb app-background-orb-secondary"></div>
+
+    <aside class="sidebar">
+        <NavMenu />
+    </aside>
+
+    <main>
+        <div class="top-row px-4">
+@*             <div class="top-row-copy">
+                <div class="top-row-label">Operations Console</div>
+                <div class="fw-semibold top-row-title">Inventory workspace</div>
+                <div class="small text-secondary">Manage stock, usage, returns, and reports</div>
+            </div> *@
+
+            <AuthorizeView>
+                <Authorized>
+                    <div class="top-row-user-card text-end">
+                        <div class="top-row-user-avatar">@((context.User.Identity?.Name ?? "U").Substring(0, 1).ToUpperInvariant())</div>
+                        <div>
+                            <div class="fw-semibold">@context.User.Identity?.Name</div>
+                            @* <div class="small text-secondary">Authenticated session</div> *@
+                        </div>
+                    </div>
+                </Authorized>
+            </AuthorizeView>
+        </div>
+
+        <article class="content px-4">
+            <NotificationBanner />
+            <div class="app-surface">
+                @Body
+            </div>
+        </article>
+    </main>
+</div>
+
+<div id="blazor-error-ui" data-nosnippet>
+    An unhandled error has occurred.
+    <a href="." class="reload">Reload</a>
+    <span class="dismiss">🗙</span>
+</div>

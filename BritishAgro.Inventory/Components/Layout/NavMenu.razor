@@ -1,0 +1,108 @@
+﻿@implements IDisposable
+
+@inject NavigationManager NavigationManager
+
+<div class="top-row ps-3 navbar navbar-dark">
+    <div class="container-fluid">
+        <a class="navbar-brand" href="">
+            <span class="brand-mark">BA</span>
+            <span>
+                <span class="brand-title">BritishAgro</span>
+                <span class="brand-subtitle">Inventory Management</span>
+            </span>
+        </a>
+    </div>
+</div>
+
+<input type="checkbox" title="Navigation menu" class="navbar-toggler" />
+
+<div class="nav-scrollable" onclick="document.querySelector('.navbar-toggler').click()">
+    <nav class="nav flex-column">
+        <div class="nav-section-title px-3">Overview</div>
+        <div class="nav-item px-3">
+            <NavLink class="nav-link" href="" Match="NavLinkMatch.All">
+                <span class="bi bi-house-door-fill-nav-menu" aria-hidden="true"></span> Dashboard
+            </NavLink>
+        </div>
+
+        <div class="nav-section-title px-3">Inventory</div>
+        <div class="nav-item px-3">
+            <NavLink class="nav-link" href="categories">
+                <span class="bi bi-plus-square-fill-nav-menu" aria-hidden="true"></span> Categories
+            </NavLink>
+        </div>
+
+        <div class="nav-item px-3">
+            <NavLink class="nav-link" href="products">
+                <span class="bi bi-list-nested-nav-menu" aria-hidden="true"></span> Products
+            </NavLink>
+        </div>
+
+        <div class="nav-item px-3">
+            <NavLink class="nav-link" href="stocks">
+                <span class="bi bi-lock-nav-menu" aria-hidden="true"></span> Add Stock
+            </NavLink>
+        </div>
+
+        <div class="nav-item px-3">
+            <NavLink class="nav-link" href="usage">
+                <span class="bi bi-list-nested-nav-menu" aria-hidden="true"></span> Product usage
+            </NavLink>
+        </div>
+
+        <div class="nav-item px-3">
+            <NavLink class="nav-link" href="returns">
+                <span class="bi bi-plus-square-fill-nav-menu" aria-hidden="true"></span> Product return
+            </NavLink>
+        </div>
+
+        <div class="nav-item px-3">
+            <NavLink class="nav-link" href="reports">
+                <span class="bi bi-house-door-fill-nav-menu" aria-hidden="true"></span> Stock reports
+            </NavLink>
+        </div>
+
+        <AuthorizeView>
+            <Authorized>
+                <div class="nav-footer px-3 mt-auto">
+@*                     <div class="nav-user-card">
+                        <div class="nav-user-avatar">@((context.User.Identity?.Name ?? "U").Substring(0, 1).ToUpperInvariant())</div>
+                        <div>
+                            <div class="nav-user-name">@context.User.Identity?.Name</div>
+                            <div class="nav-user-role">Local authenticated user</div>
+                        </div>
+                    </div> *@
+                    <form action="Account/Logout" method="post" class="logout-form">
+                        <AntiforgeryToken />
+                        <input type="hidden" name="ReturnUrl" value="@currentUrl" />
+                        <button type="submit" class="nav-link logout-button">
+                            <span class="bi bi-arrow-bar-left-nav-menu" aria-hidden="true"></span> Logout
+                        </button>
+                    </form>
+                </div>
+            </Authorized>
+        </AuthorizeView>
+    </nav>
+</div>
+
+@code {
+    private string? currentUrl;
+
+    protected override void OnInitialized()
+    {
+        currentUrl = NavigationManager.ToBaseRelativePath(NavigationManager.Uri);
+        NavigationManager.LocationChanged += OnLocationChanged;
+    }
+
+    private void OnLocationChanged(object? sender, LocationChangedEventArgs e)
+    {
+        currentUrl = NavigationManager.ToBaseRelativePath(e.Location);
+        StateHasChanged();
+    }
+
+    public void Dispose()
+    {
+        NavigationManager.LocationChanged -= OnLocationChanged;
+    }
+}
+

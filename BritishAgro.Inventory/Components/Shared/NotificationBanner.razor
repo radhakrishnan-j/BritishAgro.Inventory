@@ -1,0 +1,43 @@
+@implements IDisposable
+@inject BritishAgro.Inventory.Services.Notifications.NotificationService NotificationService
+
+@if (NotificationService.Messages.Count > 0)
+{
+    <div class="notification-stack">
+        @foreach (var message in NotificationService.Messages)
+        {
+            <div class="notification-item @GetCssClass(message.Type)" role="alert">
+                <div>
+                    <div class="notification-title">@message.Type</div>
+                    <div>@message.Message</div>
+                </div>
+                <button type="button" class="btn-close" aria-label="Close" @onclick="() => NotificationService.Dismiss(message.Id)"></button>
+            </div>
+        }
+    </div>
+}
+
+@code {
+    protected override void OnInitialized()
+    {
+        NotificationService.OnChange += HandleChange;
+    }
+
+    private void HandleChange()
+    {
+        InvokeAsync(StateHasChanged);
+    }
+
+    private static string GetCssClass(BritishAgro.Inventory.Services.Notifications.NotificationType type) => type switch
+    {
+        BritishAgro.Inventory.Services.Notifications.NotificationType.Success => "notification-success",
+        BritishAgro.Inventory.Services.Notifications.NotificationType.Info => "notification-info",
+        BritishAgro.Inventory.Services.Notifications.NotificationType.Warning => "notification-warning",
+        _ => "notification-error"
+    };
+
+    public void Dispose()
+    {
+        NotificationService.OnChange -= HandleChange;
+    }
+}

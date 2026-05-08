@@ -1,0 +1,62 @@
+@typeparam TModel
+
+<div @onclick="OnBackdropClick" @onclick:stopPropagation="false" style="@(IsOpen ? "display: block; background-color: #00000080;" : "display: none;")" class="modal fade @(IsOpen ? "show d-block" : "")">
+    @if (IsOpen)
+    {
+        <div class="modal-dialog modal-dialog-centered" @onclick:stopPropagation="true">
+            <div class="modal-content">
+                <div class="modal-header border-bottom">
+                    <h5 class="modal-title">@Title</h5>
+                    <button type="button" class="btn-close" aria-label="Close" @onclick="CloseAsync"></button>
+                </div>
+                <EditForm Model="Model" OnValidSubmit="OnSubmit" FormName="@FormName">
+                    <DataAnnotationsValidator />
+                    <div class="modal-body">
+                        <ValidationSummary class="alert alert-danger mb-0" />
+                        @ChildContent
+                    </div>
+                    <div class="modal-footer border-top">
+                        <button type="button" class="btn btn-outline-secondary" @onclick="CloseAsync">Cancel</button>
+                        <button type="submit" class="btn btn-primary">@SubmitButtonText</button>
+                    </div>
+                </EditForm>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired]
+    public bool IsOpen { get; set; }
+
+    [Parameter, EditorRequired]
+    public string Title { get; set; } = string.Empty;
+
+    [Parameter, EditorRequired]
+    public TModel Model { get; set; } = default!;
+
+    [Parameter]
+    public string SubmitButtonText { get; set; } = "Save";
+
+    [Parameter, EditorRequired]
+    public string FormName { get; set; } = string.Empty;
+
+    [Parameter, EditorRequired]
+    public RenderFragment ChildContent { get; set; } = default!;
+
+    [Parameter, EditorRequired]
+    public EventCallback OnClose { get; set; }
+
+    [Parameter, EditorRequired]
+    public EventCallback OnSubmit { get; set; }
+
+    private async Task CloseAsync()
+    {
+        await OnClose.InvokeAsync();
+    }
+
+    private void OnBackdropClick()
+    {
+        CloseAsync();
+    }
+}

@@ -1,0 +1,407 @@
+@page "/products"
+@rendermode InteractiveServer
+@attribute [Authorize]
+
+@using System.ComponentModel.DataAnnotations
+@using System.Reflection
+@inject BritishAgro.Inventory.Services.Inventory.IProductService ProductService
+@inject BritishAgro.Inventory.Services.Inventory.ICategoryService CategoryService
+@inject BritishAgro.Inventory.Services.Notifications.NotificationService NotificationService
+
+<PageTitle>Products</PageTitle>
+
+<SectionHeader Title="Products" Subtitle="Maintain products, categories, units, and reorder levels.">
+    <Actions>
+        <button type="button" class="btn btn-primary" @onclick="OpenCreateModal">
+            <i class="bi bi-plus-circle me-2"></i>New product
+        </button>
+    </Actions>
+</SectionHeader>
+
+<div class="content-card">
+    <div class="row mb-4 align-items-center">
+        <div class="col-md-6">
+            <div class="input-group">
+                <span class="input-group-text bg-light border-end-0">
+                    <i class="bi bi-search"></i>
+                </span>
+                <input type="text" class="form-control border-start-0" placeholder="Search by product or category name..." 
+                       @bind="searchQuery" @bind:event="oninput" @onkeyup="OnSearchChanged" />
+            </div>
+        </div>
+        <div class="col-md-6 text-end">
+            <small class="text-secondary">Total: @allProducts.Count products</small>
+        </div>
+    </div>
+
+    @if (isLoading)
+    {
+        <div class="text-center py-5">
+            <div class="spinner-border spinner-border-sm text-primary" role="status">
+                <span class="visually-hidden">Loading...</span>
+            </div>
+            <p class="text-secondary mt-2">Loading products...</p>
+        </div>
+    }
+    else if (paginatedProducts.Count == 0)
+    {
+        <EmptyState Title="No products found" Message="@(string.IsNullOrEmpty(searchQuery) ? "Create a product to start stock tracking." : "No products match your search criteria.")" />
+    }
+    else
+    {
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-4">
+                <thead class="table-light">
+                    <tr>
+                        <th>Name</th>
+                        <th>Category</th>
+                        <th>Unit</th>
+                        <th class="text-end">Reorder</th>
+                        <th class="text-end">On hand</th>
+                        <th>Status</th>
+                        <th class="text-end">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var product in paginatedProducts)
+                    {
+                        <tr>
+                            <td>
+                                <strong>@product.Name</strong>
+                            </td>
+                            <td>
+                                <span class="badge bg-light text-dark">@(product.Category?.Name ?? "Unassigned")</span>
+                            </td>
+                            <td>@product.UnitOfMeasurement</td>
+                            <td class="text-end">
+                                <span class="text-secondary">@(product.ReorderLevel?.ToString("0.##") ?? "-")</span>
+                            </td>
+                            <td class="text-end">
+                                <strong>@product.StoreStocks.Sum(x => x.QuantityAvailable).ToString("0.##")</strong>
+                            </td>
+                            <td>
+                                <span class="badge @(product.IsActive ? "text-bg-success" : "text-bg-secondary")">
+                                    @(product.IsActive ? "Active" : "Inactive")
+                                </span>
+                            </td>
+                            <td class="text-end">
+                                <button type="button" class="btn btn-sm btn-outline-primary me-2" @onclick="() => OpenEditModal(product)" title="Edit">
+                                    <i class="bi bi-pencil"></i>
+                                </button>
+                                <button type="button" class="btn btn-sm btn-outline-danger" @onclick="() => DeleteAsync(product.ItemId)" title="Delete">
+                                    <i class="bi bi-trash"></i>
+                                </button>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+
+        <PaginationControls 
+            Items="paginatedProducts" 
+            CurrentPage="currentPage" 
+            PageSize="pageSize" 
+            TotalItems="filteredProducts.Count" 
+            OnPageChanged="OnPageChanged" />
+    }
+</div>
+
+<GenericModal TModel="ProductInput" 
+    IsOpen="isModalOpen" 
+    Title="@(model.ItemId == 0 ? "Create Product" : "Edit Product")" 
+    Model="model" 
+    SubmitButtonText="@(model.ItemId == 0 ? "Create" : "Update")"
+    FormName="product-form" 
+    OnClose="CloseModal" 
+    OnSubmit="SaveAsync">
+    <div class="mb-3">
+        <label class="form-label">Name</label>
+        <InputText class="form-control" @bind-Value="model.Name" placeholder="Enter product name" />
+        <ValidationMessage For="() => model.Name" class="text-danger" />
+    </div>
+    <div class="mb-3">
+        <label class="form-label">Description</label>
+        <InputTextArea class="form-control" rows="3" @bind-Value="model.Description" placeholder="Enter product description (optional)" />
+        <ValidationMessage For="() => model.Description" class="text-danger" />
+    </div>
+    <div class="mb-3">
+        <div class="d-flex justify-content-between align-items-center mb-2">
+            <label class="form-label mb-0">Category</label>
+            <button type="button" class="btn btn-link btn-sm p-0" @onclick="OpenCategoryModal">+ Create category</button>
+        </div>
+        <InputSelect class="form-select" @bind-Value="model.CategoryId">
+            <option value="">Unassigned</option>
+            @foreach (var category in categories)
+            {
+                <option value="@category.CategoryId">@category.Name</option>
+            }
+        </InputSelect>
+    </div>
+    <div class="mb-3">
+        <label class="form-label">Unit of measurement</label>
+        <InputSelect class="form-select" @bind-Value="model.UnitOfMeasurement">
+            <option value="">Select unit</option>
+            @foreach (var unit in unitOfMeasurementOptions)
+            {
+                <option value="@unit.Value">@unit.Text</option>
+            }
+        </InputSelect>
+    </div>
+    <div class="mb-3">
+        <label class="form-label">Reorder level</label>
+        <InputNumber class="form-control" @bind-Value="model.ReorderLevel" />
+    </div>
+    <div class="form-check form-switch">
+        <InputCheckbox class="form-check-input" @bind-Value="model.IsActive" />
+        <label class="form-check-label">Active</label>
+    </div>
+</GenericModal>
+
+<GenericModal TModel="CategoryInput" 
+    IsOpen="isCategoryModalOpen" 
+    Title="Create Category" 
+    Model="categoryModel" 
+    SubmitButtonText="Create"
+    FormName="category-modal-form" 
+    OnClose="CloseCategoryModal" 
+    OnSubmit="SaveCategoryAsync">
+    <div class="mb-3">
+        <label class="form-label">Name</label>
+        <InputText class="form-control" @bind-Value="categoryModel.Name" placeholder="Enter category name" />
+        <ValidationMessage For="() => categoryModel.Name" class="text-danger" />
+    </div>
+    <div class="mb-0">
+        <label class="form-label">Description</label>
+        <InputTextArea class="form-control" rows="3" @bind-Value="categoryModel.Description" placeholder="Enter category description (optional)" />
+        <ValidationMessage For="() => categoryModel.Description" class="text-danger" />
+    </div>
+</GenericModal>
+
+@code {
+    private IReadOnlyList<BritishAgro.Inventory.Data.Product> allProducts = [];
+    private IReadOnlyList<BritishAgro.Inventory.Data.Product> filteredProducts = [];
+    private IReadOnlyList<BritishAgro.Inventory.Data.Product> paginatedProducts = [];
+    private IReadOnlyList<BritishAgro.Inventory.Data.Category> categories = [];
+    private static readonly IReadOnlyList<UnitOfMeasurementOption> unitOfMeasurementOptions = Enum
+        .GetValues<BritishAgro.Inventory.Data.UnitOfMeasurement>()
+        .Select(unit => new UnitOfMeasurementOption(unit.ToString(), GetDisplayName(unit)))
+        .ToArray();
+    private ProductInput model = new();
+    private CategoryInput categoryModel = new();
+    private bool isLoading = true;
+    private bool isModalOpen;
+    private bool isCategoryModalOpen;
+    private int currentPage = 1;
+    private int pageSize = 10;
+    private string searchQuery = string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        try
+        {
+            isLoading = true;
+            await LoadCategoriesAsync();
+            allProducts = await ProductService.GetAllAsync();
+            filteredProducts = allProducts;
+            UpdatePaginatedProducts();
+        }
+        catch (Exception exception)
+        {
+            NotificationService.Error(exception.Message);
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private async Task LoadCategoriesAsync()
+    {
+        categories = await ProductService.GetCategoriesAsync();
+    }
+
+    private void OnSearchChanged()
+    {
+        currentPage = 1;
+        ApplySearch();
+    }
+
+    private void ApplySearch()
+    {
+        if (string.IsNullOrWhiteSpace(searchQuery))
+        {
+            filteredProducts = allProducts;
+        }
+        else
+        {
+            var query = searchQuery.ToLower();
+            filteredProducts = allProducts
+                .Where(p => p.Name.ToLower().Contains(query) || 
+                           (p.Description ?? string.Empty).ToLower().Contains(query) ||
+                           (p.Category?.Name ?? string.Empty).ToLower().Contains(query))
+                .ToList();
+        }
+        UpdatePaginatedProducts();
+    }
+
+    private void UpdatePaginatedProducts()
+    {
+        var startIndex = (currentPage - 1) * pageSize;
+        paginatedProducts = filteredProducts.Skip(startIndex).Take(pageSize).ToList();
+    }
+
+    private async Task OnPageChanged(int page)
+    {
+        currentPage = page;
+        UpdatePaginatedProducts();
+    }
+
+    private void OpenCreateModal()
+    {
+        model = new();
+        isModalOpen = true;
+    }
+
+    private void OpenEditModal(BritishAgro.Inventory.Data.Product product)
+    {
+        model = new ProductInput
+        {
+            ItemId = product.ItemId,
+            Name = product.Name,
+            Description = product.Description,
+            CategoryId = product.CategoryId,
+            UnitOfMeasurement = product.UnitOfMeasurement,
+            ReorderLevel = product.ReorderLevel,
+            IsActive = product.IsActive
+        };
+        isModalOpen = true;
+    }
+
+    private void CloseModal()
+    {
+        isModalOpen = false;
+        model = new();
+    }
+
+    private void OpenCategoryModal()
+    {
+        categoryModel = new();
+        isCategoryModalOpen = true;
+    }
+
+    private void CloseCategoryModal()
+    {
+        categoryModel = new();
+        isCategoryModalOpen = false;
+    }
+
+    private async Task SaveAsync()
+    {
+        try
+        {
+            await ProductService.SaveAsync(new BritishAgro.Inventory.Data.Product
+            {
+                ItemId = model.ItemId,
+                Name = model.Name,
+                Description = model.Description,
+                CategoryId = model.CategoryId,
+                UnitOfMeasurement = model.UnitOfMeasurement,
+                ReorderLevel = model.ReorderLevel,
+                IsActive = model.IsActive
+            });
+
+            NotificationService.Success(model.ItemId == 0 ? "Product created successfully." : "Product updated successfully.");
+            CloseModal();
+            await LoadAsync();
+        }
+        catch (Exception exception)
+        {
+            NotificationService.Error(exception.Message);
+        }
+    }
+
+    private async Task DeleteAsync(int productId)
+    {
+        try
+        {
+            await ProductService.DeleteAsync(productId);
+            NotificationService.Success("Product deleted successfully.");
+            if (model.ItemId == productId)
+            {
+                CloseModal();
+            }
+            await LoadAsync();
+        }
+        catch (Exception exception)
+        {
+            NotificationService.Error(exception.Message);
+        }
+    }
+
+    private async Task SaveCategoryAsync()
+    {
+        try
+        {
+            var category = await CategoryService.SaveAsync(new BritishAgro.Inventory.Data.Category
+            {
+                Name = categoryModel.Name,
+                Description = categoryModel.Description,
+                IsActive = true
+            });
+
+            await LoadCategoriesAsync();
+            model.CategoryId = category.CategoryId;
+            NotificationService.Success("Category created successfully.");
+            CloseCategoryModal();
+        }
+        catch (Exception exception)
+        {
+            NotificationService.Error(exception.Message);
+        }
+    }
+
+    private static string GetDisplayName(BritishAgro.Inventory.Data.UnitOfMeasurement unit)
+    {
+        var member = typeof(BritishAgro.Inventory.Data.UnitOfMeasurement).GetMember(unit.ToString()).FirstOrDefault();
+        return member?.GetCustomAttribute<DisplayAttribute>()?.GetName() ?? unit.ToString();
+    }
+
+    private sealed class ProductInput
+    {
+        public int ItemId { get; set; }
+
+        [Required]
+        [StringLength(255)]
+        public string Name { get; set; } = string.Empty;
+
+        [StringLength(1000)]
+        public string? Description { get; set; }
+
+        public int? CategoryId { get; set; }
+
+        [StringLength(50)]
+        public string? UnitOfMeasurement { get; set; }
+
+        public decimal? ReorderLevel { get; set; }
+
+        public bool IsActive { get; set; } = true;
+    }
+
+    private sealed class CategoryInput
+    {
+        [Required]
+        [StringLength(100)]
+        public string Name { get; set; } = string.Empty;
+
+        [StringLength(500)]
+        public string? Description { get; set; }
+    }
+
+    private sealed record UnitOfMeasurementOption(string Value, string Text);
+}

@@ -1,0 +1,15 @@
+<div class="empty-state text-center">
+    <h4>@Title</h4>
+    @if (!string.IsNullOrWhiteSpace(Message))
+    {
+        <p class="text-secondary mb-0">@Message</p>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired]
+    public string Title { get; set; } = string.Empty;
+
+    [Parameter]
+    public string? Message { get; set; }
+}

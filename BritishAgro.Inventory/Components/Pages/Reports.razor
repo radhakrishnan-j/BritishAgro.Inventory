@@ -1,0 +1,190 @@
+@page "/reports"
+@attribute [Authorize]
+
+@inject BritishAgro.Inventory.Services.Inventory.IInventoryReportService ReportService
+@inject BritishAgro.Inventory.Services.Time.BrowserTimeService BrowserTimeService
+@inject BritishAgro.Inventory.Services.Notifications.NotificationService NotificationService
+
+<PageTitle>Stock Reports</PageTitle>
+
+<SectionHeader Title="Stock reports" Subtitle="Review current stock, low stock, category summaries, and stock movements." />
+
+@if (isLoading)
+{
+    <p>Loading reports...</p>
+}
+else
+{
+    <div class="row g-4 mb-4">
+        <div class="col-xl-6">
+            <div class="content-card h-100">
+                <h3>Current stock report</h3>
+                @if (currentStock.Count == 0)
+                {
+                    <EmptyState Title="No stock data found" />
+                }
+                else
+                {
+                    <div class="table-responsive">
+                        <table class="table table-modern align-middle mb-0">
+                            <thead>
+                                <tr>
+                                    <th>Product</th>
+                                    <th>Category</th>
+                                    <th class="text-end">On hand</th>
+                                    <th class="text-end">Reorder</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var item in currentStock)
+                                {
+                                    <tr>
+                                        <td>@item.ProductName</td>
+                                        <td>@item.CategoryName</td>
+                                        <td class="text-end">@item.QuantityOnHand.ToString("0.##") @item.UnitOfMeasurement</td>
+                                        <td class="text-end">@(item.ReorderLevel?.ToString("0.##") ?? "-")</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+            </div>
+        </div>
+        <div class="col-xl-6">
+            <div class="content-card h-100">
+                <h3>Low stock report</h3>
+                @if (lowStock.Count == 0)
+                {
+                    <EmptyState Title="No low stock items" Message="All active products are above reorder level." />
+                }
+                else
+                {
+                    <div class="table-responsive">
+                        <table class="table table-modern align-middle mb-0">
+                            <thead>
+                                <tr>
+                                    <th>Product</th>
+                                    <th>Category</th>
+                                    <th class="text-end">Current</th>
+                                    <th class="text-end">Reorder</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var item in lowStock)
+                                {
+                                    <tr>
+                                        <td>@item.ProductName</td>
+                                        <td>@item.CategoryName</td>
+                                        <td class="text-end">@item.CurrentQuantity.ToString("0.##") @item.UnitOfMeasurement</td>
+                                        <td class="text-end">@item.ReorderLevel.ToString("0.##")</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+
+    <div class="row g-4">
+        <div class="col-xl-5">
+            <div class="content-card h-100">
+                <h3>Category summary</h3>
+                @if (categorySummary.Count == 0)
+                {
+                    <EmptyState Title="No category summary available" />
+                }
+                else
+                {
+                    <div class="table-responsive">
+                        <table class="table table-modern align-middle mb-0">
+                            <thead>
+                                <tr>
+                                    <th>Category</th>
+                                    <th class="text-end">Products</th>
+                                    <th class="text-end">On hand</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var item in categorySummary)
+                                {
+                                    <tr>
+                                        <td>@item.CategoryName</td>
+                                        <td class="text-end">@item.ProductCount</td>
+                                        <td class="text-end">@item.QuantityOnHand.ToString("0.##")</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+            </div>
+        </div>
+        <div class="col-xl-7">
+            <div class="content-card h-100">
+                <h3>Recent stock movement report</h3>
+                @if (movements.Count == 0)
+                {
+                    <EmptyState Title="No stock movement data found" />
+                }
+                else
+                {
+                    <div class="table-responsive">
+                        <table class="table table-modern align-middle mb-0">
+                            <thead>
+                                <tr>
+                                    <th>Product</th>
+                                    <th>Type</th>
+                                    <th class="text-end">Quantity</th>
+                                    <th>Date</th>
+                                    <th>Remarks</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var item in movements)
+                                {
+                                    <tr>
+                                        <td>@item.ProductName</td>
+                                        <td>@item.MovementType</td>
+                                        <td class="text-end">@item.Quantity.ToString("0.##")</td>
+                                        <td>@BrowserTimeService.Format(item.Date)</td>
+                                        <td>@item.Remarks</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private IReadOnlyList<BritishAgro.Inventory.Services.Inventory.CurrentStockReportItem> currentStock = [];
+    private IReadOnlyList<BritishAgro.Inventory.Services.Inventory.LowStockReportItem> lowStock = [];
+    private IReadOnlyList<BritishAgro.Inventory.Services.Inventory.CategoryStockSummary> categorySummary = [];
+    private IReadOnlyList<BritishAgro.Inventory.Services.Inventory.StockMovementReportItem> movements = [];
+    private bool isLoading = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            currentStock = await ReportService.GetCurrentStockReportAsync();
+            lowStock = await ReportService.GetLowStockReportAsync();
+            categorySummary = await ReportService.GetCategorySummaryAsync();
+            movements = await ReportService.GetRecentMovementsAsync(50);
+        }
+        catch (Exception exception)
+        {
+            NotificationService.Error(exception.Message);
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+}

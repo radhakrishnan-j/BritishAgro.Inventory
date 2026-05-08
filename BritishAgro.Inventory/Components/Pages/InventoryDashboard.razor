@@ -1,0 +1,221 @@
+@page "/"
+@attribute [Authorize]
+
+@inject BritishAgro.Inventory.Services.Inventory.IInventoryReportService ReportService
+@inject BritishAgro.Inventory.Services.Time.BrowserTimeService BrowserTimeService
+@inject BritishAgro.Inventory.Services.Notifications.NotificationService NotificationService
+
+<PageTitle>Dashboard</PageTitle>
+
+<SectionHeader Title="Inventory dashboard" Subtitle="Monitor stock health, recent movements, and category coverage from one place." />
+
+@if (isLoading)
+{
+    <p>Loading dashboard...</p>
+}
+else if (summary is null)
+{
+    <EmptyState Title="No data available" Message="Start by creating categories and products." />
+}
+else
+{
+    <div class="dashboard-grid mb-4">
+        <SummaryCard Title="Categories" Value="@summary.TotalCategories.ToString()" />
+        <SummaryCard Title="Products" Value="@summary.TotalProducts.ToString()" />
+        <SummaryCard Title="Quantity on hand" Value="@(summary.TotalQuantityOnHand.ToString("0.##"))" />
+        <SummaryCard Title="Low stock items" Value="@summary.LowStockItems.ToString()" HelperText="Items at or below reorder level" />
+    </div>
+
+    <div class="row g-4">
+        <div class="col-xl-6">
+            <div class="content-card">
+                <h3>Current stock snapshot</h3>
+                @if (currentStock.Count == 0)
+                {
+                    <EmptyState Title="No stock available" Message="Add stock lots to see current quantities." />
+                }
+                else
+                {
+                    <div class="table-responsive">
+                        <table class="table table-modern align-middle mb-0">
+                            <thead>
+                                <tr>
+                                    <th>Product</th>
+                                    <th>Category</th>
+                                    <th class="text-end">On hand</th>
+                                    <th class="text-end">Reorder</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var item in currentStock.Take(8))
+                                {
+                                    <tr>
+                                        <td>@item.ProductName</td>
+                                        <td>@item.CategoryName</td>
+                                        <td class="text-end">@item.QuantityOnHand.ToString("0.##") @item.UnitOfMeasurement</td>
+                                        <td class="text-end">@(item.ReorderLevel?.ToString("0.##") ?? "-")</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+            </div>
+        </div>
+        <div class="col-xl-6">
+            <div class="content-card">
+                <h3>Low stock items</h3>
+                @if (lowStock.Count == 0)
+                {
+                    <EmptyState Title="No low stock items" Message="All active products are above reorder level." />
+                }
+                else
+                {
+                    <div class="table-responsive">
+                        <table class="table table-modern align-middle mb-0">
+                            <thead>
+                                <tr>
+                                    <th>Product</th>
+                                    <th>Category</th>
+                                    <th class="text-end">Current</th>
+                                    <th class="text-end">Reorder</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var item in GetPaginatedLowStock())
+                                {
+                                    <tr>
+                                        <td>@item.ProductName</td>
+                                        <td>@item.CategoryName</td>
+                                        <td class="text-end">@item.CurrentQuantity.ToString("0.##") @item.UnitOfMeasurement</td>
+                                        <td class="text-end">@item.ReorderLevel.ToString("0.##")</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+
+                    @if (totalPages > 1)
+                    {
+                        <nav aria-label="Low stock pagination" class="mt-3">
+                            <ul class="pagination pagination-sm mb-0">
+                                <li class="page-item @(currentPage == 1 ? "disabled" : "")">
+                                    <button class="page-link" @onclick="() => PreviousPage()" disabled="@(currentPage == 1)">Previous</button>
+                                </li>
+                                @for (int i = 1; i <= totalPages; i++)
+                                {
+                                    int pageNum = i;
+                                    <li class="page-item @(currentPage == pageNum ? "active" : "")">
+                                        <button class="page-link" @onclick="() => GoToPage(pageNum)">@pageNum</button>
+                                    </li>
+                                }
+                                <li class="page-item @(currentPage == totalPages ? "disabled" : "")">
+                                    <button class="page-link" @onclick="() => NextPage()" disabled="@(currentPage == totalPages)">Next</button>
+                                </li>
+                            </ul>
+                        </nav>
+                    }
+                }
+            </div>
+        </div>
+@*         <div class="col-xl-5">
+            <div class="content-card">
+                <h3>Recent stock movements</h3>
+                @if (movements.Count == 0)
+                {
+                    <EmptyState Title="No activity yet" Message="Stock-in, usage, and return activity will appear here." />
+                }
+                else
+                {
+                    <div class="list-group list-group-flush">
+                        @foreach (var movement in movements)
+                        {
+                            <div class="list-group-item px-0 py-3 border-bottom">
+                                <div class="d-flex justify-content-between gap-3">
+                                    <div>
+                                        <div class="fw-semibold">@movement.ProductName</div>
+                                        <div class="text-secondary small">@movement.MovementType · @movement.Remarks</div>
+                                    </div>
+                                    <div class="text-end">
+                                        <div class="fw-semibold">@movement.Quantity.ToString("0.##")</div>
+                                        <div class="text-secondary small">@BrowserTimeService.Format(movement.Date)</div>
+                                    </div>
+                                </div>
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
+        </div> *@
+    </div>
+}
+
+@code {
+    private BritishAgro.Inventory.Services.Inventory.DashboardSummary? summary;
+    private IReadOnlyList<BritishAgro.Inventory.Services.Inventory.CurrentStockReportItem> currentStock = [];
+    private IReadOnlyList<BritishAgro.Inventory.Services.Inventory.LowStockReportItem> lowStock = [];
+    private IReadOnlyList<BritishAgro.Inventory.Services.Inventory.StockMovementReportItem> movements = [];
+    private bool isLoading = true;
+
+    private int currentPage = 1;
+    private int pageSize = 5;
+    private int totalPages = 1;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            summary = await ReportService.GetDashboardSummaryAsync();
+            currentStock = await ReportService.GetCurrentStockReportAsync();
+            lowStock = await ReportService.GetLowStockReportAsync();
+            movements = await ReportService.GetRecentMovementsAsync();
+
+            CalculateTotalPages();
+        }
+        catch (Exception exception)
+        {
+            NotificationService.Error(exception.Message);
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private void CalculateTotalPages()
+    {
+        totalPages = (int)Math.Ceiling((double)lowStock.Count / pageSize);
+        if (totalPages == 0)
+            totalPages = 1;
+    }
+
+    private IEnumerable<BritishAgro.Inventory.Services.Inventory.LowStockReportItem> GetPaginatedLowStock()
+    {
+        var skipCount = (currentPage - 1) * pageSize;
+        return lowStock.Skip(skipCount).Take(pageSize);
+    }
+
+    private void GoToPage(int pageNumber)
+    {
+        if (pageNumber >= 1 && pageNumber <= totalPages)
+        {
+            currentPage = pageNumber;
+        }
+    }
+
+    private void PreviousPage()
+    {
+        if (currentPage > 1)
+        {
+            currentPage--;
+        }
+    }
+
+    private void NextPage()
+    {
+        if (currentPage < totalPages)
+        {
+            currentPage++;
+        }
+    }
+}

@@ -1,0 +1,162 @@
+@using System.ComponentModel.DataAnnotations
+
+@if (IsOpen && Usage is not null)
+{
+    <div class="modal fade show d-block" tabindex="-1" style="background-color: #00000080;">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Create product return</h5>
+                    <button type="button" class="btn-close" aria-label="Close" @onclick="CloseAsync"></button>
+                </div>
+                <EditForm Model="model" OnValidSubmit="SaveAsync" FormName="product-return-popup-form">
+                    <DataAnnotationsValidator />
+                    <div class="modal-body">
+                        <ValidationSummary class="text-danger" />
+                        <div class="mb-3">
+                            <label class="form-label">Product</label>
+                            <div class="form-control-plaintext">@Usage.Product.Name</div>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Usage reference</label>
+                            <div class="form-control-plaintext">@GetUsageReference()</div>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Date and time</label>
+                            <InputDate class="form-control" @bind-Value="model.Date" Type="InputDateType.DateTimeLocal" />
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Returned quantity</label>
+                            <InputNumber class="form-control" @bind-Value="model.QuantityReturned" />
+                            <div class="form-text">Maximum available to return: @MaxQuantityReturned.ToString("0.##")</div>
+                            <ValidationMessage For="() => model.QuantityReturned" class="text-danger" />
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Returned by</label>
+                            <InputText class="form-control" @bind-Value="model.ReturnedBy" />
+                            <ValidationMessage For="() => model.ReturnedBy" class="text-danger" />
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Remarks</label>
+                            <InputTextArea class="form-control" rows="3" @bind-Value="model.Remarks" />
+                            <ValidationMessage For="() => model.Remarks" class="text-danger" />
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-outline-secondary" @onclick="CloseAsync">Cancel</button>
+                        <button type="submit" class="btn btn-primary">Record return</button>
+                    </div>
+                </EditForm>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter]
+    public bool IsOpen { get; set; }
+
+    [Parameter]
+    public BritishAgro.Inventory.Data.ProductUsage? Usage { get; set; }
+
+    [Parameter]
+    public decimal MaxQuantityReturned { get; set; }
+
+    [Parameter]
+    public EventCallback OnClose { get; set; }
+
+    [Parameter]
+    public EventCallback<BritishAgro.Inventory.Data.ProductReturn> OnSave { get; set; }
+
+    private ReturnInput model = new();
+    private int? initializedUsageId;
+
+    protected override void OnParametersSet()
+    {
+        if (!IsOpen || Usage is null)
+        {
+            return;
+        }
+
+        if (initializedUsageId == Usage.UsageId)
+        {
+            model.MaxQuantityReturned = MaxQuantityReturned;
+            return;
+        }
+
+        initializedUsageId = Usage.UsageId;
+        model = new ReturnInput
+        {
+            ProductId = Usage.ProductId,
+            UsageId = Usage.UsageId,
+            Date = DateTime.Now,
+            QuantityReturned = MaxQuantityReturned,
+            ReturnedBy = Usage.ReceivedBy,
+            Remarks = Usage.Remarks,
+            MaxQuantityReturned = MaxQuantityReturned
+        };
+    }
+
+    private Task CloseAsync()
+    {
+        initializedUsageId = null;
+        model = new ReturnInput();
+        return OnClose.InvokeAsync();
+    }
+
+    private async Task SaveAsync()
+    {
+        if (Usage is null)
+        {
+            return;
+        }
+
+        await OnSave.InvokeAsync(new BritishAgro.Inventory.Data.ProductReturn
+        {
+            ProductId = model.ProductId,
+            UsageId = model.UsageId,
+            QuantityReturned = model.QuantityReturned,
+            Date = new DateTimeOffset(model.Date).ToUnixTimeMilliseconds(),
+            ReturnedBy = model.ReturnedBy,
+            Remarks = model.Remarks
+        });
+    }
+
+    private string GetUsageReference()
+    {
+        return Usage is null
+            ? string.Empty
+            : $"#{Usage.UsageId} - {Usage.ReceivedBy} - {Usage.Issued?.ToString("0.##")}";
+    }
+
+    private sealed class ReturnInput : IValidatableObject
+    {
+        [Range(1, int.MaxValue)]
+        public int ProductId { get; set; }
+
+        public int? UsageId { get; set; }
+
+        public DateTime Date { get; set; } = DateTime.Now;
+
+        [Range(typeof(decimal), "0.01", "999999999")]
+        public decimal QuantityReturned { get; set; }
+
+        [Required]
+        [StringLength(255)]
+        public string ReturnedBy { get; set; } = string.Empty;
+
+        [Required]
+        [StringLength(255)]
+        public string Remarks { get; set; } = string.Empty;
+
+        public decimal MaxQuantityReturned { get; set; }
+
+        public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
+        {
+            if (MaxQuantityReturned > 0 && QuantityReturned > MaxQuantityReturned)
+            {
+                yield return new ValidationResult($"Returned quantity cannot exceed {MaxQuantityReturned:0.##}.", [nameof(QuantityReturned)]);
+            }
+        }
+    }
+}

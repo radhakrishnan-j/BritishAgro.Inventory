@@ -1,0 +1,199 @@
+.page {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
+    background:
+        radial-gradient(circle at top left, rgba(59, 130, 246, 0.16), transparent 28%),
+        linear-gradient(180deg, #f8fbff 0%, #eef4ff 100%);
+    overflow-x: clip;
+    overflow-y: visible;
+}
+
+main {
+    flex: 1;
+    min-width: 0;
+    min-height: 100vh;
+    position: relative;
+    z-index: 1;
+    display: flex;
+    flex-direction: column;
+}
+
+.sidebar {
+    position: relative;
+    z-index: 2;
+    display: flex;
+    flex-direction: column;
+    align-self: stretch;
+    background: linear-gradient(180deg, #07111f 0%, #0f172a 30%, #172554 100%);
+    border-right: 1px solid rgba(255, 255, 255, 0.08);
+    min-height: 100vh;
+    overflow: hidden;
+}
+
+.top-row {
+    background: rgba(255, 255, 255, 0.72);
+    border-bottom: 1px solid rgba(148, 163, 184, 0.18);
+    justify-content: space-between;
+    min-height: 4.75rem;
+    display: flex;
+    align-items: center;
+    backdrop-filter: blur(20px);
+    box-shadow: 0 12px 32px rgba(15, 23, 42, 0.06);
+}
+
+    .top-row ::deep a, .top-row ::deep .btn-link {
+        white-space: nowrap;
+        margin-left: 1.5rem;
+        text-decoration: none;
+    }
+
+    .top-row ::deep a:hover, .top-row ::deep .btn-link:hover {
+        text-decoration: underline;
+    }
+
+    .top-row ::deep a:first-child {
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+.content {
+    flex: 1;
+    padding-top: 1.75rem;
+    padding-bottom: 2.5rem;
+    position: relative;
+    z-index: 1;
+}
+
+.app-surface {
+    position: relative;
+}
+
+.top-row-copy {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+}
+
+.top-row-label {
+    font-size: 0.72rem;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: #2563eb;
+    font-weight: 700;
+}
+
+.top-row-title {
+    font-size: 1.15rem;
+}
+
+.top-row-user-card {
+    display: flex;
+    align-items: center;
+    gap: 0.85rem;
+    padding: 0.65rem 0.9rem;
+    border-radius: 18px;
+    border: 1px solid rgba(148, 163, 184, 0.22);
+    background: rgba(255, 255, 255, 0.8);
+}
+
+.top-row-user-avatar {
+    width: 2.55rem;
+    height: 2.55rem;
+    border-radius: 999px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(135deg, #2563eb, #7c3aed);
+    color: white;
+    font-weight: 800;
+    box-shadow: 0 10px 24px rgba(37, 99, 235, 0.28);
+}
+
+.app-background-orb {
+    position: fixed;
+    border-radius: 999px;
+    filter: blur(40px);
+    opacity: 0.45;
+    pointer-events: none;
+    z-index: 0;
+}
+
+.app-background-orb-primary {
+    width: 18rem;
+    height: 18rem;
+    top: 8rem;
+    right: -5rem;
+    background: rgba(59, 130, 246, 0.26);
+}
+
+.app-background-orb-secondary {
+    width: 16rem;
+    height: 16rem;
+    bottom: 2rem;
+    left: 18rem;
+    background: rgba(139, 92, 246, 0.18);
+}
+
+@media (max-width: 640.98px) {
+    .top-row {
+        justify-content: space-between;
+    }
+
+    .top-row ::deep a, .top-row ::deep .btn-link {
+        margin-left: 0;
+    }
+}
+
+@media (min-width: 641px) {
+    .page {
+        flex-direction: row;
+    }
+
+    .sidebar {
+        width: 290px;
+        flex: 0 0 290px;
+        height: 100vh;
+        position: sticky;
+        top: 0;
+    }
+
+    .top-row {
+        position: sticky;
+        top: 0;
+        z-index: 4;
+    }
+
+    .top-row.auth ::deep a:first-child {
+        flex: 1;
+        text-align: right;
+        width: 0;
+    }
+
+    .top-row, article {
+        padding-left: 2.25rem !important;
+        padding-right: 2rem !important;
+    }
+}
+
+#blazor-error-ui {
+    color-scheme: light only;
+    background: lightyellow;
+    bottom: 0;
+    box-shadow: 0 -1px 2px rgba(0, 0, 0, 0.2);
+    box-sizing: border-box;
+    display: none;
+    left: 0;
+    padding: 0.6rem 1.25rem 0.7rem 1.25rem;
+    position: fixed;
+    width: 100%;
+    z-index: 1000;
+}
+
+    #blazor-error-ui .dismiss {
+        cursor: pointer;
+        position: absolute;
+        right: 0.75rem;
+        top: 0.5rem;
+    }
