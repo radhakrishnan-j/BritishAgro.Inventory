@@ -12,8 +12,8 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace BritishAgro.Inventory.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    [Migration("20260508173950_productreturn")]
-    partial class productreturn
+    [Migration("20260512030112_initial")]
+    partial class initial
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
