@@ -53,101 +53,115 @@ else
                 </div>
             </div>
 
-            <div class="table-responsive">
-                <table class="table table-modern align-middle">
-                    <thead>
-                        <tr>
-                            <th>Date</th>
-                            <th>Product</th>
-                            <th class="text-end">Unit</th>
-                            <th class="text-end">Opening Stock</th>
-                            <th class="text-end">Received</th>
-                            <th class="text-end">Issued</th>
-                            <th class="text-end">Closing Stock</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        @{
-                            string? lastDate = null;
-                            foreach (var item in GetSortedItems())
-                            {
-                                var dateString = item.Date.ToString("yyyy-MM-dd");
-                                var isNewDate = dateString != lastDate;
+            @if (reportData.ReportItems.Count == 0)
+            {
+                <div class="alert alert-info" role="alert">
+                    <i class="bi bi-info-circle"></i> No stock transactions found for <strong>@GetMonthYearDisplay(reportData.Year, reportData.Month)</strong>.
+                </div>
+            }
+            else
+            {
+                <div class="table-responsive">
+                    <table class="table table-modern align-middle">
+                        <thead>
+                            <tr>
+                                <th>Product</th>
+                                <th class="text-end">Unit</th>
+                                <th class="text-end">Date</th>
+                                <th class="text-end">Opening Stock</th>
+                                <th class="text-end">Received</th>
+                                <th class="text-end">Issued</th>
+                                <th class="text-end">Closing Stock</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @{
+                                string? lastProduct = null;
+                                foreach (var item in GetSortedByProductItems())
+                                {
+                                    var productName = item.ProductName;
+                                    var isNewProduct = productName != lastProduct;
 
-                                <tr @key="item.ProductId.ToString() + item.Date.Ticks">
-                                    <td>
-                                        @if (isNewDate)
-                                        {
-                                            <strong>@item.Date.ToString("ddd, MMM dd")</strong>
-                                            lastDate = dateString;
-                                        }
-                                    </td>
-                                    <td>@item.ProductName</td>
-                                    <td class="text-end">@item.UnitOfMeasurement</td>
-                                    <td class="text-end">
-                                        <span class="badge bg-info">@item.OpeningStock.ToString("0.##")</span>
-                                    </td>
-                                    <td class="text-end">
-                                        @if (item.Received > 0)
-                                        {
-                                            <span class="badge bg-success">+@item.Received.ToString("0.##")</span>
-                                        }
-                                        else
-                                        {
-                                            <span class="text-muted">-</span>
-                                        }
-                                    </td>
-                                    <td class="text-end">
-                                        @if (item.Issued > 0)
-                                        {
-                                            <span class="badge bg-warning">-@item.Issued.ToString("0.##")</span>
-                                        }
-                                        else
-                                        {
-                                            <span class="text-muted">-</span>
-                                        }
-                                    </td>
-                                    <td class="text-end">
-                                        <span class="badge bg-primary">@item.ClosingStock.ToString("0.##")</span>
-                                    </td>
-                                </tr>
+                                    <tr @key="item.ProductId.ToString() + item.Date.Ticks">
+                                        <td>
+                                            @if (isNewProduct)
+                                            {
+                                                <strong>@productName</strong>
+                                                lastProduct = productName;
+                                            }
+                                        </td>
+                                        <td class="text-end">
+                                            @if (isNewProduct)
+                                            {
+                                                <span class="badge bg-secondary">@item.UnitOfMeasurement</span>
+                                            }
+                                        </td>
+                                        <td class="text-end">@item.Date.ToString("dd MMM")</td>
+                                        <td class="text-end">
+                                            <span class="badge bg-info">@item.OpeningStock.ToString("0.##")</span>
+                                        </td>
+                                        <td class="text-end">
+                                            @if (item.Received > 0)
+                                            {
+                                                <span class="badge bg-success">+@item.Received.ToString("0.##")</span>
+                                            }
+                                            else
+                                            {
+                                                <span class="text-muted">-</span>
+                                            }
+                                        </td>
+                                        <td class="text-end">
+                                            @if (item.Issued > 0)
+                                            {
+                                                <span class="badge bg-warning">-@item.Issued.ToString("0.##")</span>
+                                            }
+                                            else
+                                            {
+                                                <span class="text-muted">-</span>
+                                            }
+                                        </td>
+                                        <td class="text-end">
+                                            <span class="badge bg-primary">@item.ClosingStock.ToString("0.##")</span>
+                                        </td>
+                                    </tr>
+                                }
                             }
-                        }
-                    </tbody>
-                </table>
-            </div>
+                        </tbody>
+                    </table>
+                </div>
 
-            <div class="row mt-4 pt-4 border-top">
-                <div class="col-md-12">
-                    <h6>Summary</h6>
-                    <div class="row">
-                        <div class="col-md-3">
-                            <div class="stat-box">
-                                <div class="stat-label">Total Received</div>
-                                <div class="stat-value text-success">@reportData.ReportItems.Sum(x => x.Received).ToString("0.##")</div>
+                <div class="row mt-4 pt-4 border-top">
+                    <div class="col-md-12">
+                        <h6>Summary</h6>
+                        <div class="row">
+                            <div class="col-md-3">
+                                <div class="stat-box">
+                                    <div class="stat-label">Total Received</div>
+                                    <div class="stat-value text-success">@reportData.ReportItems.Sum(x => x.Received).ToString("0.##")</div>
+                                </div>
                             </div>
-                        </div>
-                        <div class="col-md-3">
-                            <div class="stat-box">
-                                <div class="stat-label">Total Issued</div>
-                                <div class="stat-value text-warning">@reportData.ReportItems.Sum(x => x.Issued).ToString("0.##")</div>
+                            <div class="col-md-3">
+                                <div class="stat-box">
+                                    <div class="stat-label">Total Issued</div>
+                                    <div class="stat-value text-warning">@reportData.ReportItems.Sum(x => x.Issued).ToString("0.##")</div>
+                                </div>
                             </div>
-                        </div>
-                        <div class="col-md-3">
-                            <div class="stat-box">
-                                <div class="stat-label">Unique Products</div>
-                                <div class="stat-value text-primary">@reportData.ReportItems.GroupBy(x => x.ProductId).Count()</div>
+                            <div class="col-md-3">
+                                <div class="stat-box">
+                                    <div class="stat-label">Unique Products</div>
+                                    <div class="stat-value text-primary">@reportData.ReportItems.GroupBy(x => x.ProductId).Count()</div>
+                                </div>
                             </div>
-                        </div>
-                        <div class="col-md-3">
-                            <div class="stat-box">
-                                <div class="stat-label">Total Transactions</div>
-                                <div class="stat-value text-info">@reportData.ReportItems.Count</div>
+                            <div class="col-md-3">
+                                <div class="stat-box">
+                                    <div class="stat-label">Total Transactions</div>
+                                    <div class="stat-value text-info">@reportData.ReportItems.Count</div>
+                                </div>
                             </div>
                         </div>
                     </div>
                 </div>
-            </div>
+            }
         }
     </div>
 }
@@ -246,7 +260,7 @@ else
 
     private async Task ExportToCsv()
     {
-        if (reportData == null)
+        if (reportData == null || reportData.ReportItems.Count == 0)
         {
             NotificationService.Warning("No data to export");
             return;
@@ -256,7 +270,7 @@ else
         {
             var csvData = ExportService.ExportToCsv(reportData);
             var fileName = $"stock_report_{reportData.Year:0000}_{reportData.Month:00}.csv";
-            await DownloadFile(csvData, fileName, "text/csv");
+            await JS.InvokeAsync<object>("downloadFile", Convert.ToBase64String(csvData), fileName, "text/csv");
             NotificationService.Success("Report exported to CSV successfully");
         }
         catch (Exception ex)
@@ -267,7 +281,7 @@ else
 
     private async Task ExportToExcel()
     {
-        if (reportData == null)
+        if (reportData == null || reportData.ReportItems.Count == 0)
         {
             NotificationService.Warning("No data to export");
             return;
@@ -277,7 +291,7 @@ else
         {
             var excelData = ExportService.ExportToExcel(reportData);
             var fileName = $"stock_report_{reportData.Year:0000}_{reportData.Month:00}.xlsx";
-            await DownloadFile(excelData, fileName, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+            await JS.InvokeAsync<object>("downloadFile", Convert.ToBase64String(excelData), fileName, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
             NotificationService.Success("Report exported to Excel successfully");
         }
         catch (Exception ex)
@@ -299,5 +313,27 @@ else
         return reportData.ReportItems
             .OrderBy(x => x.Date)
             .ThenBy(x => x.ProductName);
+    }
+
+    private IEnumerable<BritishAgro.Inventory.Services.Inventory.MonthlyStockReportItem> GetSortedByProductItems()
+    {
+        if (reportData == null)
+            return Enumerable.Empty<BritishAgro.Inventory.Services.Inventory.MonthlyStockReportItem>();
+
+        return reportData.ReportItems
+            .OrderBy(x => x.ProductName)
+            .ThenBy(x => x.Date);
+    }
+
+    private string GetMonthYearDisplay(int year, int month)
+    {
+        try
+        {
+            return new DateTime(year, month, 1).ToString("MMMM yyyy");
+        }
+        catch
+        {
+            return $"{year}-{month:00}";
+        }
     }
 }

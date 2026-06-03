@@ -137,29 +137,77 @@ public sealed class InventoryReportService(ApplicationDbContext dbContext) : IIn
     {
         var startDate = new DateTime(year, month, 1);
         var endDate = startDate.AddMonths(1).AddDays(-1);
-        var startTimestamp = new DateTimeOffset(startDate.Date, TimeSpan.Zero).ToUnixTimeMilliseconds();
-        var endTimestamp = new DateTimeOffset(endDate.Date.AddHours(23).AddMinutes(59).AddSeconds(59), TimeSpan.Zero).ToUnixTimeMilliseconds();
+
+        // Convert dates to timestamps using local time
+        var monthStartTimestamp = new DateTimeOffset(startDate.Date, TimeSpan.Zero).ToUnixTimeMilliseconds();
+        var monthEndTimestamp = new DateTimeOffset(endDate.Date.AddHours(23).AddMinutes(59).AddSeconds(59), TimeSpan.Zero).ToUnixTimeMilliseconds();
 
         // Get all products
         var products = await dbContext.Products
             .AsNoTracking()
             .Where(p => p.IsActive)
-            .Include(p => p.StoreStocks)
-            .Include(p => p.ProductUsages)
             .ToListAsync(cancellationToken);
 
-        // Get all stock movements for the month
-        var stockIn = await dbContext.StoreProductLots
+        if (products.Count == 0)
+        {
+            return new MonthlyReportData(year, month, new List<MonthlyStockReportItem>());
+        }
+
+        // Get ALL transactions (before and during the month)
+        var allStockIn = await dbContext.StoreProductLots
             .AsNoTracking()
-            .Where(x => x.ArrivalDate >= startTimestamp && x.ArrivalDate <= endTimestamp)
             .ToListAsync(cancellationToken);
 
-        var stockOut = await dbContext.ProductUsages
+        var allStockOut = await dbContext.ProductUsages
             .AsNoTracking()
-            .Where(x => x.Date >= startTimestamp && x.Date <= endTimestamp)
+            .ToListAsync(cancellationToken);
+
+        // Get all returns
+        var allReturns = await dbContext.ProductReturns
+            .AsNoTracking()
             .ToListAsync(cancellationToken);
 
         var reportItems = new List<MonthlyStockReportItem>();
+
+        // Dictionary to track running balance per product across the month
+        var productRunningBalance = new Dictionary<int, decimal>();
+
+        // First pass: Calculate opening stock (before month starts)
+        foreach (var product in products)
+        {
+            // Sum of receipts before month start
+            var receiptsBeforeMonth = allStockIn
+                .Where(x => x.ProductId == product.ItemId && x.ArrivalDate < monthStartTimestamp)
+                .Sum(x => x.QuantityAvailable);
+
+            // Sum of issues before month start
+            var issuesBeforeMonth = allStockOut
+                .Where(x => x.ProductId == product.ItemId && x.Date < monthStartTimestamp)
+                .Sum(x => x.Issued ?? 0);
+
+            // Sum of returns before month start
+            var returnsBeforeMonth = allReturns
+                .Where(x => x.ProductId == product.ItemId && x.Date < monthStartTimestamp)
+                .Sum(x => x.QuantityReturned);
+
+            // Opening balance = receipts - issues + returns (can be negative if issues > receipts)
+            var openingBalance = receiptsBeforeMonth - issuesBeforeMonth + returnsBeforeMonth;
+
+            productRunningBalance[product.ItemId] = Math.Max(0, openingBalance); // Never go below 0 for opening
+        }
+
+        // Get transactions for the month only
+        var monthStockIn = allStockIn
+            .Where(x => x.ArrivalDate >= monthStartTimestamp && x.ArrivalDate <= monthEndTimestamp)
+            .ToList();
+
+        var monthStockOut = allStockOut
+            .Where(x => x.Date >= monthStartTimestamp && x.Date <= monthEndTimestamp)
+            .ToList();
+
+        var monthReturns = allReturns
+            .Where(x => x.Date >= monthStartTimestamp && x.Date <= monthEndTimestamp)
+            .ToList();
 
         // Generate daily entries for each product
         for (int day = 1; day <= DateTime.DaysInMonth(year, month); day++)
@@ -170,23 +218,30 @@ public sealed class InventoryReportService(ApplicationDbContext dbContext) : IIn
 
             foreach (var product in products)
             {
-                // Calculate opening stock (stock from previous day)
-                var openingStock = await GetStockAtDateAsync(product.ItemId, dayStart, cancellationToken);
+                var openingStock = productRunningBalance[product.ItemId];
 
                 // Get received for this day
-                var receivedToday = stockIn
+                var receivedToday = monthStockIn
                     .Where(x => x.ProductId == product.ItemId && x.ArrivalDate >= dayStart && x.ArrivalDate <= dayEnd)
                     .Sum(x => x.QuantityAvailable);
 
                 // Get issued for this day
-                var issuedToday = stockOut
+                var issuedToday = monthStockOut
                     .Where(x => x.ProductId == product.ItemId && x.Date >= dayStart && x.Date <= dayEnd)
                     .Sum(x => x.Issued ?? 0);
 
-                var closingStock = openingStock + receivedToday - issuedToday;
+                // Get returned for this day
+                var returnedToday = monthReturns
+                    .Where(x => x.ProductId == product.ItemId && x.Date >= dayStart && x.Date <= dayEnd)
+                    .Sum(x => x.QuantityReturned);
 
-                // Only include if there's activity or opening/closing stock
-                if (receivedToday > 0 || issuedToday > 0 || openingStock > 0 || closingStock > 0)
+                var closingStock = openingStock + receivedToday + returnedToday - issuedToday;
+
+                // Update running balance for next day (allow negative for tracking discrepancies)
+                productRunningBalance[product.ItemId] = closingStock;
+
+                // Only include if there's activity (received, issued, or returned)
+                if (receivedToday > 0 || issuedToday > 0 || returnedToday > 0)
                 {
                     reportItems.Add(new MonthlyStockReportItem(
                         product.ItemId,
@@ -201,24 +256,7 @@ public sealed class InventoryReportService(ApplicationDbContext dbContext) : IIn
             }
         }
 
-        return new MonthlyReportData(year, month, reportItems.OrderBy(x => x.Date).ThenBy(x => x.ProductName).ToList());
-    }
-
-    private async Task<decimal> GetStockAtDateAsync(int productId, long timestamp, CancellationToken cancellationToken)
-    {
-        // Get all stock receipts up to this date
-        var received = await dbContext.StoreProductLots
-            .AsNoTracking()
-            .Where(x => x.ProductId == productId && x.ArrivalDate < timestamp)
-            .SumAsync(x => x.QuantityAvailable, cancellationToken);
-
-        // Get all stock issues up to this date
-        var issued = await dbContext.ProductUsages
-            .AsNoTracking()
-            .Where(x => x.ProductId == productId && x.Date < timestamp)
-            .SumAsync(x => x.Issued ?? 0, cancellationToken);
-
-        return received - issued;
+        return new MonthlyReportData(year, month, reportItems.OrderBy(x => x.ProductName).ThenBy(x => x.Date).ToList());
     }
 }
 

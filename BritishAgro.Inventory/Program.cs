@@ -30,6 +30,7 @@ builder.Services.AddAuthentication(options =>
 builder.Services.Configure<InventorySettings>(builder.Configuration.GetSection("Inventory"));
 
 var activeEnvironment = builder.Configuration["Inventory:ActiveEnvironment"] ?? "Development";
+var isDevelopmentEnvironment = activeEnvironment.Equals("Development", StringComparison.OrdinalIgnoreCase);
 var connectionString = builder.Configuration.GetConnectionString($"{activeEnvironment}Connection")
     ?? builder.Configuration.GetConnectionString("DefaultConnection")
     ?? throw new InvalidOperationException("A valid connection string was not found.");
@@ -60,7 +61,7 @@ var app = builder.Build();
 
 // Configure the HTTP request pipeline.
 app.UseDeveloperExceptionPage();
-if (app.Environment.IsDevelopment())
+if (isDevelopmentEnvironment)
 {
     app.UseMigrationsEndPoint();
 }
@@ -87,7 +88,12 @@ try
 {
     using var scope = app.Services.CreateScope();
     var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-    await dbContext.Database.MigrateAsync();
+
+    //// Only run migrations in development environment
+    //if (app.Environment.IsDevelopment())
+    //{
+    //    await dbContext.Database.MigrateAsync();
+    //}
 }
 catch (Exception ex)
 {
