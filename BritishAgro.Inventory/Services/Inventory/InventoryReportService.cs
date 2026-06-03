@@ -10,6 +10,7 @@ public interface IInventoryReportService
     Task<IReadOnlyList<LowStockReportItem>> GetLowStockReportAsync(CancellationToken cancellationToken = default);
     Task<IReadOnlyList<CategoryStockSummary>> GetCategorySummaryAsync(CancellationToken cancellationToken = default);
     Task<IReadOnlyList<StockMovementReportItem>> GetRecentMovementsAsync(int take = 20, CancellationToken cancellationToken = default);
+    Task<MonthlyReportData> GetMonthlyStockReportAsync(int year, int month, CancellationToken cancellationToken = default);
 }
 
 public sealed class InventoryReportService(ApplicationDbContext dbContext) : IInventoryReportService
@@ -130,6 +131,94 @@ public sealed class InventoryReportService(ApplicationDbContext dbContext) : IIn
             .OrderByDescending(item => item.Date)
             .Take(take)
             .ToList();
+    }
+
+    public async Task<MonthlyReportData> GetMonthlyStockReportAsync(int year, int month, CancellationToken cancellationToken = default)
+    {
+        var startDate = new DateTime(year, month, 1);
+        var endDate = startDate.AddMonths(1).AddDays(-1);
+        var startTimestamp = new DateTimeOffset(startDate.Date, TimeSpan.Zero).ToUnixTimeMilliseconds();
+        var endTimestamp = new DateTimeOffset(endDate.Date.AddHours(23).AddMinutes(59).AddSeconds(59), TimeSpan.Zero).ToUnixTimeMilliseconds();
+
+        // Get all products
+        var products = await dbContext.Products
+            .AsNoTracking()
+            .Where(p => p.IsActive)
+            .Include(p => p.StoreStocks)
+            .Include(p => p.ProductUsages)
+            .ToListAsync(cancellationToken);
+
+        // Get all stock movements for the month
+        var stockIn = await dbContext.StoreProductLots
+            .AsNoTracking()
+            .Where(x => x.ArrivalDate >= startTimestamp && x.ArrivalDate <= endTimestamp)
+            .ToListAsync(cancellationToken);
+
+        var stockOut = await dbContext.ProductUsages
+            .AsNoTracking()
+            .Where(x => x.Date >= startTimestamp && x.Date <= endTimestamp)
+            .ToListAsync(cancellationToken);
+
+        var reportItems = new List<MonthlyStockReportItem>();
+
+        // Generate daily entries for each product
+        for (int day = 1; day <= DateTime.DaysInMonth(year, month); day++)
+        {
+            var currentDate = new DateTime(year, month, day);
+            var dayStart = new DateTimeOffset(currentDate, TimeSpan.Zero).ToUnixTimeMilliseconds();
+            var dayEnd = new DateTimeOffset(currentDate.AddHours(23).AddMinutes(59).AddSeconds(59), TimeSpan.Zero).ToUnixTimeMilliseconds();
+
+            foreach (var product in products)
+            {
+                // Calculate opening stock (stock from previous day)
+                var openingStock = await GetStockAtDateAsync(product.ItemId, dayStart, cancellationToken);
+
+                // Get received for this day
+                var receivedToday = stockIn
+                    .Where(x => x.ProductId == product.ItemId && x.ArrivalDate >= dayStart && x.ArrivalDate <= dayEnd)
+                    .Sum(x => x.QuantityAvailable);
+
+                // Get issued for this day
+                var issuedToday = stockOut
+                    .Where(x => x.ProductId == product.ItemId && x.Date >= dayStart && x.Date <= dayEnd)
+                    .Sum(x => x.Issued ?? 0);
+
+                var closingStock = openingStock + receivedToday - issuedToday;
+
+                // Only include if there's activity or opening/closing stock
+                if (receivedToday > 0 || issuedToday > 0 || openingStock > 0 || closingStock > 0)
+                {
+                    reportItems.Add(new MonthlyStockReportItem(
+                        product.ItemId,
+                        product.Name,
+                        product.UnitOfMeasurement ?? "Unit",
+                        currentDate,
+                        openingStock,
+                        receivedToday,
+                        issuedToday,
+                        closingStock));
+                }
+            }
+        }
+
+        return new MonthlyReportData(year, month, reportItems.OrderBy(x => x.Date).ThenBy(x => x.ProductName).ToList());
+    }
+
+    private async Task<decimal> GetStockAtDateAsync(int productId, long timestamp, CancellationToken cancellationToken)
+    {
+        // Get all stock receipts up to this date
+        var received = await dbContext.StoreProductLots
+            .AsNoTracking()
+            .Where(x => x.ProductId == productId && x.ArrivalDate < timestamp)
+            .SumAsync(x => x.QuantityAvailable, cancellationToken);
+
+        // Get all stock issues up to this date
+        var issued = await dbContext.ProductUsages
+            .AsNoTracking()
+            .Where(x => x.ProductId == productId && x.Date < timestamp)
+            .SumAsync(x => x.Issued ?? 0, cancellationToken);
+
+        return received - issued;
     }
 }
 

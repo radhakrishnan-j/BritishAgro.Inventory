@@ -1,0 +1,303 @@
+@page "/reports/monthly"
+@attribute [Authorize]
+@using BritishAgro.Inventory.Services.Inventory
+
+@inject BritishAgro.Inventory.Services.Inventory.IInventoryReportService ReportService
+@inject BritishAgro.Inventory.Services.Export.IReportExportService ExportService
+@inject BritishAgro.Inventory.Services.Notifications.NotificationService NotificationService
+@inject IJSRuntime JS
+
+<PageTitle>Monthly Stock Report</PageTitle>
+
+<SectionHeader Title="Monthly Stock Report" Subtitle="View daily stock movements by product with opening, received, issued, and closing stock." />
+
+@if (isLoading)
+{
+    <div class="d-flex justify-content-center align-items-center" style="height: 400px;">
+        <div class="spinner-border text-primary" role="status">
+            <span class="visually-hidden">Loading report...</span>
+        </div>
+    </div>
+}
+else
+{
+    <div class="content-card">
+        <div class="row mb-4 align-items-end">
+            <div class="col-md-3">
+                <label for="monthSelector" class="form-label">Select Month</label>
+                <input type="month" id="monthSelector" class="form-control" 
+                       value="@monthInput" @onchange="HandleMonthChange" />
+            </div>
+            <div class="col-md-9">
+                <div class="d-flex gap-2">
+                    <button class="btn btn-primary" @onclick="ExportToCsv">
+                        <i class="bi bi-download"></i> Download CSV
+                    </button>
+                    <button class="btn btn-success" @onclick="ExportToExcel">
+                        <i class="bi bi-download"></i> Download Excel
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        @if (reportData?.ReportItems.Count == 0)
+        {
+            <EmptyState Title="No stock movements found" Message="No stock transactions were recorded for this month." />
+        }
+        else if (reportData != null)
+        {
+            <div class="row mb-3">
+                <div class="col-md-12">
+                    <h5>Report Period: @reportData.Year:@reportData.Month.ToString("00")</h5>
+                    <p class="text-muted">Total Transactions: @reportData.ReportItems.Count</p>
+                </div>
+            </div>
+
+            <div class="table-responsive">
+                <table class="table table-modern align-middle">
+                    <thead>
+                        <tr>
+                            <th>Date</th>
+                            <th>Product</th>
+                            <th class="text-end">Unit</th>
+                            <th class="text-end">Opening Stock</th>
+                            <th class="text-end">Received</th>
+                            <th class="text-end">Issued</th>
+                            <th class="text-end">Closing Stock</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @{
+                            string? lastDate = null;
+                            foreach (var item in GetSortedItems())
+                            {
+                                var dateString = item.Date.ToString("yyyy-MM-dd");
+                                var isNewDate = dateString != lastDate;
+
+                                <tr @key="item.ProductId.ToString() + item.Date.Ticks">
+                                    <td>
+                                        @if (isNewDate)
+                                        {
+                                            <strong>@item.Date.ToString("ddd, MMM dd")</strong>
+                                            lastDate = dateString;
+                                        }
+                                    </td>
+                                    <td>@item.ProductName</td>
+                                    <td class="text-end">@item.UnitOfMeasurement</td>
+                                    <td class="text-end">
+                                        <span class="badge bg-info">@item.OpeningStock.ToString("0.##")</span>
+                                    </td>
+                                    <td class="text-end">
+                                        @if (item.Received > 0)
+                                        {
+                                            <span class="badge bg-success">+@item.Received.ToString("0.##")</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="text-muted">-</span>
+                                        }
+                                    </td>
+                                    <td class="text-end">
+                                        @if (item.Issued > 0)
+                                        {
+                                            <span class="badge bg-warning">-@item.Issued.ToString("0.##")</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="text-muted">-</span>
+                                        }
+                                    </td>
+                                    <td class="text-end">
+                                        <span class="badge bg-primary">@item.ClosingStock.ToString("0.##")</span>
+                                    </td>
+                                </tr>
+                            }
+                        }
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="row mt-4 pt-4 border-top">
+                <div class="col-md-12">
+                    <h6>Summary</h6>
+                    <div class="row">
+                        <div class="col-md-3">
+                            <div class="stat-box">
+                                <div class="stat-label">Total Received</div>
+                                <div class="stat-value text-success">@reportData.ReportItems.Sum(x => x.Received).ToString("0.##")</div>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="stat-box">
+                                <div class="stat-label">Total Issued</div>
+                                <div class="stat-value text-warning">@reportData.ReportItems.Sum(x => x.Issued).ToString("0.##")</div>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="stat-box">
+                                <div class="stat-label">Unique Products</div>
+                                <div class="stat-value text-primary">@reportData.ReportItems.GroupBy(x => x.ProductId).Count()</div>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="stat-box">
+                                <div class="stat-label">Total Transactions</div>
+                                <div class="stat-value text-info">@reportData.ReportItems.Count</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+}
+
+<style>
+    .stat-box {
+        padding: 1rem;
+        background-color: #f8f9fa;
+        border-radius: 0.5rem;
+        border-left: 4px solid #0d6efd;
+    }
+
+    .stat-label {
+        font-size: 0.875rem;
+        color: #6c757d;
+        font-weight: 500;
+        margin-bottom: 0.5rem;
+    }
+
+    .stat-value {
+        font-size: 1.75rem;
+        font-weight: bold;
+    }
+
+    .content-card {
+        background-color: white;
+        border-radius: 0.5rem;
+        padding: 2rem;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    }
+
+    .table-modern {
+        border-collapse: separate;
+        border-spacing: 0;
+    }
+
+    .table-modern thead {
+        background-color: #f8f9fa;
+        border-bottom: 2px solid #dee2e6;
+    }
+
+    .table-modern tbody tr {
+        border-bottom: 1px solid #dee2e6;
+    }
+
+    .table-modern tbody tr:hover {
+        background-color: #f8f9fa;
+    }
+</style>
+
+@code {
+    private MonthlyReportData? reportData;
+    private string monthInput = string.Empty;
+    private bool isLoading = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Set default to current month
+        var now = DateTime.Now;
+        monthInput = $"{now.Year:0000}-{now.Month:00}";
+        await LoadReport();
+    }
+
+    private async Task HandleMonthChange(ChangeEventArgs e)
+    {
+        monthInput = e.Value?.ToString() ?? string.Empty;
+        if (!string.IsNullOrEmpty(monthInput))
+        {
+            await LoadReport();
+        }
+    }
+
+    private async Task LoadReport()
+    {
+        if (string.IsNullOrEmpty(monthInput))
+            return;
+
+        try
+        {
+            isLoading = true;
+
+            if (DateTime.TryParseExact(monthInput, "yyyy-MM", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var selectedDate))
+            {
+                reportData = await ReportService.GetMonthlyStockReportAsync(selectedDate.Year, selectedDate.Month);
+            }
+        }
+        catch (Exception ex)
+        {
+            NotificationService.Error("Error loading report: " + ex.Message);
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private async Task ExportToCsv()
+    {
+        if (reportData == null)
+        {
+            NotificationService.Warning("No data to export");
+            return;
+        }
+
+        try
+        {
+            var csvData = ExportService.ExportToCsv(reportData);
+            var fileName = $"stock_report_{reportData.Year:0000}_{reportData.Month:00}.csv";
+            await DownloadFile(csvData, fileName, "text/csv");
+            NotificationService.Success("Report exported to CSV successfully");
+        }
+        catch (Exception ex)
+        {
+            NotificationService.Error("Error exporting to CSV: " + ex.Message);
+        }
+    }
+
+    private async Task ExportToExcel()
+    {
+        if (reportData == null)
+        {
+            NotificationService.Warning("No data to export");
+            return;
+        }
+
+        try
+        {
+            var excelData = ExportService.ExportToExcel(reportData);
+            var fileName = $"stock_report_{reportData.Year:0000}_{reportData.Month:00}.xlsx";
+            await DownloadFile(excelData, fileName, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+            NotificationService.Success("Report exported to Excel successfully");
+        }
+        catch (Exception ex)
+        {
+            NotificationService.Error("Error exporting to Excel: " + ex.Message);
+        }
+    }
+
+    private async Task DownloadFile(byte[] fileContent, string fileName, string contentType)
+    {
+        await JS.InvokeVoidAsync("downloadFile", fileContent, fileName, contentType);
+    }
+
+    private IEnumerable<BritishAgro.Inventory.Services.Inventory.MonthlyStockReportItem> GetSortedItems()
+    {
+        if (reportData == null)
+            return Enumerable.Empty<BritishAgro.Inventory.Services.Inventory.MonthlyStockReportItem>();
+
+        return reportData.ReportItems
+            .OrderBy(x => x.Date)
+            .ThenBy(x => x.ProductName);
+    }
+}

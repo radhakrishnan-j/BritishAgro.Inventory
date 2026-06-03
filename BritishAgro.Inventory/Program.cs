@@ -5,6 +5,7 @@ using BritishAgro.Inventory.Data;
 using BritishAgro.Inventory.Services.Inventory;
 using BritishAgro.Inventory.Services.Notifications;
 using BritishAgro.Inventory.Services.Time;
+using BritishAgro.Inventory.Services.Export;
 using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
@@ -53,6 +54,7 @@ builder.Services.AddScoped<ICategoryService, CategoryService>();
 builder.Services.AddScoped<IProductService, ProductService>();
 builder.Services.AddScoped<IInventoryTransactionService, InventoryTransactionService>();
 builder.Services.AddScoped<IInventoryReportService, InventoryReportService>();
+builder.Services.AddScoped<IReportExportService, ReportExportService>();
 
 var app = builder.Build();
 
