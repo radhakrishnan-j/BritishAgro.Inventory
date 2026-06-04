@@ -5,6 +5,7 @@ public record MonthlyStockReportItem(
     string ProductName,
     string UnitOfMeasurement,
     DateTime Date,
+    long UtcDayTimestamp,
     decimal OpeningStock,
     decimal Received,
     decimal Issued,

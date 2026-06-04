@@ -20,6 +20,10 @@ public class StoreProductLot
     public decimal QuantityAvailable { get; set; }
 
     [Required]
+    [Column(TypeName = "decimal(18, 2)")]
+    public decimal QuantityReceived { get; set; }
+
+    [Required]
     public long ArrivalDate { get; set; }
 
     [Required]

@@ -1,10 +1,12 @@
 @page "/reports/monthly"
+@rendermode InteractiveServer
 @attribute [Authorize]
 @using BritishAgro.Inventory.Services.Inventory
 
 @inject BritishAgro.Inventory.Services.Inventory.IInventoryReportService ReportService
 @inject BritishAgro.Inventory.Services.Export.IReportExportService ExportService
 @inject BritishAgro.Inventory.Services.Notifications.NotificationService NotificationService
+@inject BritishAgro.Inventory.Services.Time.BrowserTimeService BrowserTimeService
 @inject IJSRuntime JS
 
 <PageTitle>Monthly Stock Report</PageTitle>
@@ -30,11 +32,27 @@ else
             </div>
             <div class="col-md-9">
                 <div class="d-flex gap-2">
-                    <button class="btn btn-primary" @onclick="ExportToCsv">
-                        <i class="bi bi-download"></i> Download CSV
+                    <button class="btn btn-primary" @onclick="ExportToCsv" disabled="@isDownloading">
+                        @if (isDownloading)
+                        {
+                            <span class="spinner-border spinner-border-sm me-2"></span>
+                            <span>Downloading...</span>
+                        }
+                        else
+                        {
+                            <i class="bi bi-download"></i> <span>Download CSV</span>
+                        }
                     </button>
-                    <button class="btn btn-success" @onclick="ExportToExcel">
-                        <i class="bi bi-download"></i> Download Excel
+                    <button class="btn btn-success" @onclick="ExportToExcel" disabled="@isDownloading">
+                        @if (isDownloading)
+                        {
+                            <span class="spinner-border spinner-border-sm me-2"></span>
+                            <span>Downloading...</span>
+                        }
+                        else
+                        {
+                            <i class="bi bi-download"></i> <span>Download Excel</span>
+                        }
                     </button>
                 </div>
             </div>
@@ -96,7 +114,11 @@ else
                                                 <span class="badge bg-secondary">@item.UnitOfMeasurement</span>
                                             }
                                         </td>
-                                        <td class="text-end">@item.Date.ToString("dd MMM")</td>
+                                        <td class="text-end">
+                                            @(BrowserTimeService.IsInitialized
+                                                ? BrowserTimeService.Format(item.UtcDayTimestamp, "dd MMM yyyy")
+                                                : item.Date.ToString("dd MMM yyyy"))
+                                        </td>
                                         <td class="text-end">
                                             <span class="badge bg-info">@item.OpeningStock.ToString("0.##")</span>
                                         </td>
@@ -113,7 +135,7 @@ else
                                         <td class="text-end">
                                             @if (item.Issued > 0)
                                             {
-                                                <span class="badge bg-warning">-@item.Issued.ToString("0.##")</span>
+                                                <span class="badge bg-warning">@item.Issued.ToString("0.##")</span>
                                             }
                                             else
                                             {
@@ -121,7 +143,14 @@ else
                                             }
                                         </td>
                                         <td class="text-end">
-                                            <span class="badge bg-primary">@item.ClosingStock.ToString("0.##")</span>
+                                            @if (item.ClosingStock < 0)
+                                            {
+                                                <span class="badge bg-danger" title="Negative stock - data integrity issue">@item.ClosingStock.ToString("0.##")</span>
+                                            }
+                                            else
+                                            {
+                                                <span class="badge bg-primary">@item.ClosingStock.ToString("0.##")</span>
+                                            }
                                         </td>
                                     </tr>
                                 }
@@ -216,13 +245,26 @@ else
     private MonthlyReportData? reportData;
     private string monthInput = string.Empty;
     private bool isLoading = false;
+    private bool isDownloading = false;
 
     protected override async Task OnInitializedAsync()
     {
         // Set default to current month
         var now = DateTime.Now;
         monthInput = $"{now.Year:0000}-{now.Month:00}";
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender)
+        {
+            return;
+        }
+
+        await BrowserTimeService.EnsureInitializedAsync();
+        // Keep report loading after browser time initialization to align startup flow.
         await LoadReport();
+        await InvokeAsync(StateHasChanged);
     }
 
     private async Task HandleMonthChange(ChangeEventArgs e)
@@ -230,6 +272,10 @@ else
         monthInput = e.Value?.ToString() ?? string.Empty;
         if (!string.IsNullOrEmpty(monthInput))
         {
+            if (!BrowserTimeService.IsInitialized)
+            {
+                await BrowserTimeService.EnsureInitializedAsync();
+            }
             await LoadReport();
         }
     }
@@ -242,10 +288,15 @@ else
         try
         {
             isLoading = true;
+            StateHasChanged(); // Force UI to show loading spinner
 
             if (DateTime.TryParseExact(monthInput, "yyyy-MM", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var selectedDate))
             {
-                reportData = await ReportService.GetMonthlyStockReportAsync(selectedDate.Year, selectedDate.Month);
+                var browserOffsetMinutes = BrowserTimeService.IsInitialized
+                    ? BrowserTimeService.GetBrowserOffsetMinutes()
+                    : (int?)null;
+
+                reportData = await ReportService.GetMonthlyStockReportAsync(selectedDate.Year, selectedDate.Month, browserOffsetMinutes);
             }
         }
         catch (Exception ex)
@@ -255,6 +306,7 @@ else
         finally
         {
             isLoading = false;
+            StateHasChanged(); // Force UI to update with new data
         }
     }
 
@@ -266,16 +318,47 @@ else
             return;
         }
 
+        isDownloading = true;
+        StateHasChanged();
+
         try
         {
             var csvData = ExportService.ExportToCsv(reportData);
+            var base64String = Convert.ToBase64String(csvData);
             var fileName = $"stock_report_{reportData.Year:0000}_{reportData.Month:00}.csv";
-            await JS.InvokeAsync<object>("downloadFile", Convert.ToBase64String(csvData), fileName, "text/csv");
-            NotificationService.Success("Report exported to CSV successfully");
+
+            // Try to call JavaScript download function
+            try
+            {
+                var result = await JS.InvokeAsync<bool>("downloadFile", base64String, fileName, "text/csv");
+                if (result)
+                {
+                    NotificationService.Success("Report exported to CSV successfully");
+                }
+                else
+                {
+                    NotificationService.Warning("Download initiated - check your browser's downloads folder");
+                }
+            }
+            catch (JSDisconnectedException)
+            {
+                NotificationService.Error("JavaScript interop error - please try again");
+            }
+            catch (JSException jsEx)
+            {
+                NotificationService.Error($"Download error: {jsEx.Message}");
+                System.Diagnostics.Debug.WriteLine($"JS Error: {jsEx}");
+            }
         }
         catch (Exception ex)
         {
-            NotificationService.Error("Error exporting to CSV: " + ex.Message);
+            NotificationService.Error($"Error preparing CSV: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($"CSV Export Error: {ex}");
+        }
+        finally
+        {
+            isDownloading = false;
+            StateHasChanged();
         }
     }
 
@@ -287,16 +370,47 @@ else
             return;
         }
 
+        isDownloading = true;
+        StateHasChanged();
+
         try
         {
             var excelData = ExportService.ExportToExcel(reportData);
+            var base64String = Convert.ToBase64String(excelData);
             var fileName = $"stock_report_{reportData.Year:0000}_{reportData.Month:00}.xlsx";
-            await JS.InvokeAsync<object>("downloadFile", Convert.ToBase64String(excelData), fileName, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
-            NotificationService.Success("Report exported to Excel successfully");
+
+            // Try to call JavaScript download function
+            try
+            {
+                var result = await JS.InvokeAsync<bool>("downloadFile", base64String, fileName, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+                if (result)
+                {
+                    NotificationService.Success("Report exported to Excel successfully");
+                }
+                else
+                {
+                    NotificationService.Warning("Download initiated - check your browser's downloads folder");
+                }
+            }
+            catch (JSDisconnectedException)
+            {
+                NotificationService.Error("JavaScript interop error - please try again");
+            }
+            catch (JSException jsEx)
+            {
+                NotificationService.Error($"Download error: {jsEx.Message}");
+                System.Diagnostics.Debug.WriteLine($"JS Error: {jsEx}");
+            }
         }
         catch (Exception ex)
         {
-            NotificationService.Error("Error exporting to Excel: " + ex.Message);
+            NotificationService.Error($"Error preparing Excel: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($"Excel Export Error: {ex}");
+        }
+        finally
+        {
+            isDownloading = false;
+            StateHasChanged();
         }
     }
 

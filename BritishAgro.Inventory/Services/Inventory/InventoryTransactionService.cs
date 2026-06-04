@@ -80,6 +80,11 @@ public sealed class InventoryTransactionService(ApplicationDbContext dbContext, 
                 throw new InvalidOperationException("Stock can only be added to active products.");
             }
 
+            if (lot.QuantityReceived <= 0)
+            {
+                lot.QuantityReceived = lot.QuantityAvailable;
+            }
+
             lot.AdditionType = "New";
             dbContext.StoreProductLots.Add(lot);
             await dbContext.SaveChangesAsync(cancellationToken);

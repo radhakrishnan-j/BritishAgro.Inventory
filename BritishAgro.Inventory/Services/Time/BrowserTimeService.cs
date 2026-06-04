@@ -71,4 +71,9 @@ public sealed class BrowserTimeService(IJSRuntime jsRuntime)
 
         return _browserOffsetMinutes.Value;
     }
+
+    public int GetBrowserOffsetMinutes()
+    {
+        return GetBrowserOffset();
+    }
 }

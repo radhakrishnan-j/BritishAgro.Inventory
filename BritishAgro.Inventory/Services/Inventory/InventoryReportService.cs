@@ -10,7 +10,7 @@ public interface IInventoryReportService
     Task<IReadOnlyList<LowStockReportItem>> GetLowStockReportAsync(CancellationToken cancellationToken = default);
     Task<IReadOnlyList<CategoryStockSummary>> GetCategorySummaryAsync(CancellationToken cancellationToken = default);
     Task<IReadOnlyList<StockMovementReportItem>> GetRecentMovementsAsync(int take = 20, CancellationToken cancellationToken = default);
-    Task<MonthlyReportData> GetMonthlyStockReportAsync(int year, int month, CancellationToken cancellationToken = default);
+    Task<MonthlyReportData> GetMonthlyStockReportAsync(int year, int month, int? browserOffsetMinutes = null, CancellationToken cancellationToken = default);
 }
 
 public sealed class InventoryReportService(ApplicationDbContext dbContext) : IInventoryReportService
@@ -133,14 +133,16 @@ public sealed class InventoryReportService(ApplicationDbContext dbContext) : IIn
             .ToList();
     }
 
-    public async Task<MonthlyReportData> GetMonthlyStockReportAsync(int year, int month, CancellationToken cancellationToken = default)
+    public async Task<MonthlyReportData> GetMonthlyStockReportAsync(int year, int month, int? browserOffsetMinutes = null, CancellationToken cancellationToken = default)
     {
         var startDate = new DateTime(year, month, 1);
         var endDate = startDate.AddMonths(1).AddDays(-1);
 
-        // Convert dates to timestamps using local time
-        var monthStartTimestamp = new DateTimeOffset(startDate.Date, TimeSpan.Zero).ToUnixTimeMilliseconds();
-        var monthEndTimestamp = new DateTimeOffset(endDate.Date.AddHours(23).AddMinutes(59).AddSeconds(59), TimeSpan.Zero).ToUnixTimeMilliseconds();
+        var offset = TimeSpan.FromMinutes(-(browserOffsetMinutes ?? 0));
+
+        // Convert local month boundaries to UTC timestamps
+        var monthStartTimestamp = new DateTimeOffset(startDate.Date, offset).ToUnixTimeMilliseconds();
+        var monthEndTimestamp = new DateTimeOffset(endDate.Date.AddHours(23).AddMinutes(59).AddSeconds(59), offset).ToUnixTimeMilliseconds();
 
         // Get all products
         var products = await dbContext.Products
@@ -153,91 +155,84 @@ public sealed class InventoryReportService(ApplicationDbContext dbContext) : IIn
             return new MonthlyReportData(year, month, new List<MonthlyStockReportItem>());
         }
 
-        // Get ALL transactions (before and during the month)
-        var allStockIn = await dbContext.StoreProductLots
+        // Get ALL transactions to reconstruct historical balances
+        var allStockLots = await dbContext.StoreProductLots
             .AsNoTracking()
             .ToListAsync(cancellationToken);
 
-        var allStockOut = await dbContext.ProductUsages
+        var allProductUsages = await dbContext.ProductUsages
             .AsNoTracking()
             .ToListAsync(cancellationToken);
 
-        // Get all returns
-        var allReturns = await dbContext.ProductReturns
+        var allProductReturns = await dbContext.ProductReturns
             .AsNoTracking()
             .ToListAsync(cancellationToken);
 
-        var reportItems = new List<MonthlyStockReportItem>();
-
-        // Dictionary to track running balance per product across the month
-        var productRunningBalance = new Dictionary<int, decimal>();
-
-        // First pass: Calculate opening stock (before month starts)
-        foreach (var product in products)
-        {
-            // Sum of receipts before month start
-            var receiptsBeforeMonth = allStockIn
-                .Where(x => x.ProductId == product.ItemId && x.ArrivalDate < monthStartTimestamp)
-                .Sum(x => x.QuantityAvailable);
-
-            // Sum of issues before month start
-            var issuesBeforeMonth = allStockOut
-                .Where(x => x.ProductId == product.ItemId && x.Date < monthStartTimestamp)
-                .Sum(x => x.Issued ?? 0);
-
-            // Sum of returns before month start
-            var returnsBeforeMonth = allReturns
-                .Where(x => x.ProductId == product.ItemId && x.Date < monthStartTimestamp)
-                .Sum(x => x.QuantityReturned);
-
-            // Opening balance = receipts - issues + returns (can be negative if issues > receipts)
-            var openingBalance = receiptsBeforeMonth - issuesBeforeMonth + returnsBeforeMonth;
-
-            productRunningBalance[product.ItemId] = Math.Max(0, openingBalance); // Never go below 0 for opening
-        }
-
-        // Get transactions for the month only
-        var monthStockIn = allStockIn
+        // Transactions DURING the month only
+        var monthTransactionsIn = allStockLots
             .Where(x => x.ArrivalDate >= monthStartTimestamp && x.ArrivalDate <= monthEndTimestamp)
             .ToList();
 
-        var monthStockOut = allStockOut
+        var monthStockOut = allProductUsages
             .Where(x => x.Date >= monthStartTimestamp && x.Date <= monthEndTimestamp)
             .ToList();
 
-        var monthReturns = allReturns
+        var monthReturns = allProductReturns
             .Where(x => x.Date >= monthStartTimestamp && x.Date <= monthEndTimestamp)
             .ToList();
+
+        var reportItems = new List<MonthlyStockReportItem>();
+        var productRunningBalance = new Dictionary<int, decimal>();
+
+        // CALCULATE OPENING STOCK for each product at month start
+        // Opening Stock = (All received before month) - (All issued before month) + (All returned before month)
+        foreach (var product in products)
+        {
+            var receivedBeforeMonth = allStockLots
+                .Where(x => x.ProductId == product.ItemId && x.ArrivalDate < monthStartTimestamp)
+                .Sum(x => x.QuantityReceived > 0 ? x.QuantityReceived : x.QuantityAvailable);
+
+            var issuedBeforeMonth = allProductUsages
+                .Where(x => x.ProductId == product.ItemId && x.Date < monthStartTimestamp)
+                .Sum(x => x.Issued ?? 0);
+
+            var returnedBeforeMonth = allProductReturns
+                .Where(x => x.ProductId == product.ItemId && x.Date < monthStartTimestamp)
+                .Sum(x => x.QuantityReturned);
+
+            var openingStock = receivedBeforeMonth - issuedBeforeMonth + returnedBeforeMonth;
+            productRunningBalance[product.ItemId] = openingStock;
+        }
 
         // Generate daily entries for each product
         for (int day = 1; day <= DateTime.DaysInMonth(year, month); day++)
         {
             var currentDate = new DateTime(year, month, day);
-            var dayStart = new DateTimeOffset(currentDate, TimeSpan.Zero).ToUnixTimeMilliseconds();
-            var dayEnd = new DateTimeOffset(currentDate.AddHours(23).AddMinutes(59).AddSeconds(59), TimeSpan.Zero).ToUnixTimeMilliseconds();
+            var dayStart = new DateTimeOffset(currentDate, offset).ToUnixTimeMilliseconds();
+            var dayEnd = new DateTimeOffset(currentDate.AddHours(23).AddMinutes(59).AddSeconds(59), offset).ToUnixTimeMilliseconds();
 
             foreach (var product in products)
             {
                 var openingStock = productRunningBalance[product.ItemId];
 
-                // Get received for this day
-                var receivedToday = monthStockIn
+                // RECEIVED during this day = new lots added on this day
+                var receivedToday = monthTransactionsIn
                     .Where(x => x.ProductId == product.ItemId && x.ArrivalDate >= dayStart && x.ArrivalDate <= dayEnd)
-                    .Sum(x => x.QuantityAvailable);
+                    .Sum(x => x.QuantityReceived > 0 ? x.QuantityReceived : x.QuantityAvailable);
 
-                // Get issued for this day
+                // ISSUED during this day
                 var issuedToday = monthStockOut
                     .Where(x => x.ProductId == product.ItemId && x.Date >= dayStart && x.Date <= dayEnd)
                     .Sum(x => x.Issued ?? 0);
 
-                // Get returned for this day
+                // RETURNED during this day
                 var returnedToday = monthReturns
                     .Where(x => x.ProductId == product.ItemId && x.Date >= dayStart && x.Date <= dayEnd)
                     .Sum(x => x.QuantityReturned);
 
                 var closingStock = openingStock + receivedToday + returnedToday - issuedToday;
 
-                // Update running balance for next day (allow negative for tracking discrepancies)
+                // Update running balance for next day
                 productRunningBalance[product.ItemId] = closingStock;
 
                 // Only include if there's activity (received, issued, or returned)
@@ -248,6 +243,7 @@ public sealed class InventoryReportService(ApplicationDbContext dbContext) : IIn
                         product.Name,
                         product.UnitOfMeasurement ?? "Unit",
                         currentDate,
+                        dayStart,
                         openingStock,
                         receivedToday,
                         issuedToday,
