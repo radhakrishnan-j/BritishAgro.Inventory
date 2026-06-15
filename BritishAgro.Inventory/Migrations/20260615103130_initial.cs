@@ -275,6 +275,7 @@ namespace BritishAgro.Inventory.Migrations
                         .Annotation("SqlServer:Identity", "1, 1"),
                     ProductId = table.Column<int>(type: "int", nullable: false),
                     QuantityAvailable = table.Column<decimal>(type: "decimal(18,2)", nullable: false),
+                    QuantityReceived = table.Column<decimal>(type: "decimal(18,2)", nullable: false),
                     ArrivalDate = table.Column<long>(type: "bigint", nullable: false),
                     AdditionType = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: false),
                     UsageId = table.Column<int>(type: "int", nullable: true)

@@ -79,85 +79,98 @@ else
             }
             else
             {
-                <div class="table-responsive">
-                    <table class="table table-modern align-middle">
-                        <thead>
-                            <tr>
-                                <th>Product</th>
-                                <th class="text-end">Unit</th>
-                                <th class="text-end">Date</th>
-                                <th class="text-end">Opening Stock</th>
-                                <th class="text-end">Received</th>
-                                <th class="text-end">Issued</th>
-                                <th class="text-end">Closing Stock</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            @{
-                                string? lastProduct = null;
-                                foreach (var item in GetSortedByProductItems())
-                                {
-                                    var productName = item.ProductName;
-                                    var isNewProduct = productName != lastProduct;
+                @foreach (var categoryGroup in reportData.ReportItems.GroupBy(x => x.CategoryName ?? "Uncategorized").OrderBy(g => g.Key))
+                {
+                    <div class="mb-3">
+                        <button type="button" class="btn btn-link text-decoration-none px-0" @onclick="() => ToggleCategory(categoryGroup.Key)">
+                            <i class="bi @(expandedCategories.Contains(categoryGroup.Key) ? "bi-chevron-down" : "bi-chevron-right") me-1"></i>
+                            <strong>@categoryGroup.Key</strong>
+                        </button>
 
-                                    <tr @key="item.ProductId.ToString() + item.Date.Ticks">
-                                        <td>
-                                            @if (isNewProduct)
+                        @if (expandedCategories.Contains(categoryGroup.Key))
+                        {
+                            <div class="table-responsive">
+                                <table class="table table-modern align-middle">
+                                    <thead>
+                                        <tr>
+                                            <th>Product</th>
+                                            <th class="text-end">Unit</th>
+                                            <th class="text-end">Date</th>
+                                            <th class="text-end">Opening Stock</th>
+                                            <th class="text-end">Received</th>
+                                            <th class="text-end">Issued</th>
+                                            <th class="text-end">Closing Stock</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @{
+                                            string? lastProduct = null;
+                                            foreach (var item in categoryGroup.OrderBy(x => x.ProductName).ThenBy(x => x.Date))
                                             {
-                                                <strong>@productName</strong>
-                                                lastProduct = productName;
+                                                var productName = item.ProductName;
+                                                var isNewProduct = productName != lastProduct;
+
+                                                <tr @key="item.ProductId.ToString() + item.Date.Ticks">
+                                                    <td>
+                                                        @if (isNewProduct)
+                                                        {
+                                                            <strong>@productName</strong>
+                                                            lastProduct = productName;
+                                                        }
+                                                    </td>
+                                                    <td class="text-end">
+                                                        @if (isNewProduct)
+                                                        {
+                                                            <span class="badge bg-secondary">@item.UnitOfMeasurement</span>
+                                                        }
+                                                    </td>
+                                                    <td class="text-end">
+                                                        @(BrowserTimeService.IsInitialized
+                                                            ? BrowserTimeService.Format(item.UtcDayTimestamp, "dd MMM yyyy")
+                                                            : item.Date.ToString("dd MMM yyyy"))
+                                                    </td>
+                                                    <td class="text-end">
+                                                        <span class="badge bg-info">@item.OpeningStock.ToString("0.##")</span>
+                                                    </td>
+                                                    <td class="text-end">
+                                                        @if (item.Received > 0)
+                                                        {
+                                                            <span class="badge bg-success">+@item.Received.ToString("0.##")</span>
+                                                        }
+                                                        else
+                                                        {
+                                                            <span class="text-muted">-</span>
+                                                        }
+                                                    </td>
+                                                    <td class="text-end">
+                                                        @if (item.Issued > 0)
+                                                        {
+                                                            <span class="badge bg-warning">@item.Issued.ToString("0.##")</span>
+                                                        }
+                                                        else
+                                                        {
+                                                            <span class="text-muted">-</span>
+                                                        }
+                                                    </td>
+                                                    <td class="text-end">
+                                                        @if (item.ClosingStock < 0)
+                                                        {
+                                                            <span class="badge bg-danger" title="Negative stock - data integrity issue">@item.ClosingStock.ToString("0.##")</span>
+                                                        }
+                                                        else
+                                                        {
+                                                            <span class="badge bg-primary">@item.ClosingStock.ToString("0.##")</span>
+                                                        }
+                                                    </td>
+                                                </tr>
                                             }
-                                        </td>
-                                        <td class="text-end">
-                                            @if (isNewProduct)
-                                            {
-                                                <span class="badge bg-secondary">@item.UnitOfMeasurement</span>
-                                            }
-                                        </td>
-                                        <td class="text-end">
-                                            @(BrowserTimeService.IsInitialized
-                                                ? BrowserTimeService.Format(item.UtcDayTimestamp, "dd MMM yyyy")
-                                                : item.Date.ToString("dd MMM yyyy"))
-                                        </td>
-                                        <td class="text-end">
-                                            <span class="badge bg-info">@item.OpeningStock.ToString("0.##")</span>
-                                        </td>
-                                        <td class="text-end">
-                                            @if (item.Received > 0)
-                                            {
-                                                <span class="badge bg-success">+@item.Received.ToString("0.##")</span>
-                                            }
-                                            else
-                                            {
-                                                <span class="text-muted">-</span>
-                                            }
-                                        </td>
-                                        <td class="text-end">
-                                            @if (item.Issued > 0)
-                                            {
-                                                <span class="badge bg-warning">@item.Issued.ToString("0.##")</span>
-                                            }
-                                            else
-                                            {
-                                                <span class="text-muted">-</span>
-                                            }
-                                        </td>
-                                        <td class="text-end">
-                                            @if (item.ClosingStock < 0)
-                                            {
-                                                <span class="badge bg-danger" title="Negative stock - data integrity issue">@item.ClosingStock.ToString("0.##")</span>
-                                            }
-                                            else
-                                            {
-                                                <span class="badge bg-primary">@item.ClosingStock.ToString("0.##")</span>
-                                            }
-                                        </td>
-                                    </tr>
-                                }
-                            }
-                        </tbody>
-                    </table>
-                </div>
+                                        }
+                                    </tbody>
+                                </table>
+                            </div>
+                        }
+                    </div>
+                }
 
                 <div class="row mt-4 pt-4 border-top">
                     <div class="col-md-12">
@@ -246,6 +259,7 @@ else
     private string monthInput = string.Empty;
     private bool isLoading = false;
     private bool isDownloading = false;
+    private HashSet<string> expandedCategories = new();
 
     protected override async Task OnInitializedAsync()
     {
@@ -297,6 +311,10 @@ else
                     : (int?)null;
 
                 reportData = await ReportService.GetMonthlyStockReportAsync(selectedDate.Year, selectedDate.Month, browserOffsetMinutes);
+                expandedCategories = reportData.ReportItems
+                    .Select(x => x.CategoryName ?? "Uncategorized")
+                    .Distinct()
+                    .ToHashSet();
             }
         }
         catch (Exception ex)
@@ -419,6 +437,8 @@ else
         await JS.InvokeVoidAsync("downloadFile", fileContent, fileName, contentType);
     }
 
+
+
     private IEnumerable<BritishAgro.Inventory.Services.Inventory.MonthlyStockReportItem> GetSortedItems()
     {
         if (reportData == null)
@@ -448,6 +468,18 @@ else
         catch
         {
             return $"{year}-{month:00}";
+        }
+    }
+
+    private void ToggleCategory(string category)
+    {
+        if (expandedCategories.Contains(category))
+        {
+            expandedCategories.Remove(category);
+        }
+        else
+        {
+            expandedCategories.Add(category);
         }
     }
 }

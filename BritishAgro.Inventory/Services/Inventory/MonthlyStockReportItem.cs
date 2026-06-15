@@ -3,6 +3,7 @@ namespace BritishAgro.Inventory.Services.Inventory;
 public record MonthlyStockReportItem(
     int ProductId,
     string ProductName,
+    string CategoryName,
     string UnitOfMeasurement,
     DateTime Date,
     long UtcDayTimestamp,

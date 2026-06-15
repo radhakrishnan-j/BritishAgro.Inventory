@@ -12,7 +12,7 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace BritishAgro.Inventory.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    [Migration("20260512030112_initial")]
+    [Migration("20260615103130_initial")]
     partial class initial
     {
         /// <inheritdoc />
@@ -246,6 +246,9 @@ namespace BritishAgro.Inventory.Migrations
                         .HasColumnType("int");
 
                     b.Property<decimal>("QuantityAvailable")
+                        .HasColumnType("decimal(18, 2)");
+
+                    b.Property<decimal>("QuantityReceived")
                         .HasColumnType("decimal(18, 2)");
 
                     b.Property<int?>("UsageId")

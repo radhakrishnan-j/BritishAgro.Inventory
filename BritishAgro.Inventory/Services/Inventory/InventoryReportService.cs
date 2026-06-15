@@ -238,9 +238,13 @@ public sealed class InventoryReportService(ApplicationDbContext dbContext) : IIn
                 // Only include if there's activity (received, issued, or returned)
                 if (receivedToday > 0 || issuedToday > 0 || returnedToday > 0)
                 {
+                    // load category name for grouping
+                    var categoryName = (await dbContext.Products.Where(p => p.ItemId == product.ItemId).Select(p => p.Category != null ? p.Category.Name : "Unassigned").FirstOrDefaultAsync(cancellationToken)) ?? "Unassigned";
+
                     reportItems.Add(new MonthlyStockReportItem(
                         product.ItemId,
                         product.Name,
+                        categoryName,
                         product.UnitOfMeasurement ?? "Unit",
                         currentDate,
                         dayStart,
